@@ -42,6 +42,8 @@ If the screen says `Set home location`, the latitude and longitude in the Radar 
 
 Set the mode to **Carousel** and the device cycles through whichever modes you ticked, staying on each for the number of seconds you set. It keeps fetching data for the mode on screen only. **Theme clock** is unticked by default; tick it once a theme is installed and selected.
 
+To cycle between theme clocks rather than between features, leave the mode on **Theme clock** and set **Rotate every** in the Theme tab. The two work together: in Carousel, the theme slot shows whichever theme the rotation has reached.
+
 ## Getting back into the settings page
 
 Open the address from the CONNECTED screen in any browser on the same WiFi:

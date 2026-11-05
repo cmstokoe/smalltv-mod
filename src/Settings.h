@@ -216,6 +216,7 @@ struct Settings {
 
   // --- Active feature ---
   String themeId;       // installed .stheme ID; empty until selected
+  uint16_t themeRotateSec;  // 0 = show themeId only; else dwell per theme before the next
   uint8_t mode;         // MODE_STOCKS / MODE_USAGE / MODE_RADAR / MODE_CAROUSEL / MODE_HA
 
   // --- Carousel (mode == MODE_CAROUSEL): dwell + which features rotate ---
