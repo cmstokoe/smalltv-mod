@@ -58,6 +58,34 @@ frame. Theme mode can be selected directly or ticked as **Theme clock** under
 Carousel, where it rotates with the other features. The tick is off by default:
 with no theme installed the slot would only show `Select an installed theme`.
 
+## Rotating between themes
+
+**Rotate every** in the Theme clocks card shows each installed package in turn
+instead of only the selected one. `0`, the default, keeps the selected theme on
+screen. Any other value is a dwell in seconds, at least 60.
+
+The order is the installed IDs sorted as text, starting from the selected one,
+and it does not depend on the order the filesystem lists them in, so it is the
+same across reboots. Installing or removing a package does not restart the
+rotation: the next change carries on from the ID that is showing. Selecting a
+theme restarts it from that theme. With one package installed the rotation
+never changes what is on screen.
+
+The selection in **Installed theme** is still the theme the device starts from
+and the one a settings export records; the rotation itself is not written to
+flash as it runs, so it costs no flash wear however short the dwell.
+
+Each change reloads the package and repaints the whole screen, since only one
+theme is in RAM at a time. The screen holds the previous theme while the new
+one is parsed, then the new one is painted over it from the top down. This is
+visible, so prefer long dwells. A theme's data sources are also fetched again
+when it comes back round, which for a short dwell means more often than the
+theme's own `interval` asks for.
+
+A package the rotation cannot load is passed over without showing its error, so
+one corrupt package does not put a black frame between themes. When no package
+in `/themes` loads, the usual error appears instead.
+
 Use **Remove** to delete an inactive theme. To replace the currently selected
 package, first choose another display mode and **Save settings**, remove the old
 package, then install the replacement. Duplicate installed IDs are rejected.
