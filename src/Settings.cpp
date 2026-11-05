@@ -495,6 +495,7 @@ void Settings::setDefaults() {
 
   mode = DEFAULT_MODE;
   themeId = "";
+  themeRotateSec = 0;   // opt in: one theme on screen until asked for the rotation
   carouselSec = DEFAULT_CAROUSEL_SEC;
   carouselTicker = carouselUsage = carouselRadar = carouselHa = true;
   carouselTheme = false;   // opt in: needs an installed theme, else the slot shows an error
@@ -584,6 +585,7 @@ void settingsToJson(const Settings& s, JsonObject root, bool includeSecrets) {
 
   // Mode + shared HTTP/display
   root["themeId"] = s.themeId;
+  root["themeRotateSec"]    = s.themeRotateSec;
   root["mode"]              = (s.mode == MODE_THEME)    ? "theme"
                             : (s.mode == MODE_RADAR)    ? "radar"
                             : (s.mode == MODE_USAGE)    ? "usage"
@@ -673,6 +675,13 @@ void settingsApplyJson(Settings& s, JsonObjectConst root) {
       if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_')) valid = false;
     }
     if (valid) s.themeId = id;
+  }
+  // 0 turns the rotation off. A dwell shorter than a minute is not offered:
+  // every change reloads the package and repaints the whole screen, and a
+  // theme's data sources are fetched again when it comes back round.
+  if (root["themeRotateSec"].is<int>()) {
+    int sec = root["themeRotateSec"];
+    s.themeRotateSec = sec <= 0 ? 0 : constrain(sec, 60, 3600);
   }
   if (root["carouselSec"].is<int>())      s.carouselSec = constrain((int)root["carouselSec"], 5, 3600);
   if (root["carouselTicker"].is<bool>())  s.carouselTicker = root["carouselTicker"];
