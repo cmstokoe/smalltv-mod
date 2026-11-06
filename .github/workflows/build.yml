@@ -102,7 +102,7 @@ jobs:
         run: python3 tools/gzip_webui.py --check
 
       - name: Build firmware (all targets)
-        run: pio run -e smalltv -e smalltv_lean -e smalltv_c2 -e smalltv_esp32 -e smalltv_esp32_wg -e smalltv_esp32_8mb -e smalltv_loader
+        run: pio run -e smalltv -e smalltv_lean -e smalltv_theme -e smalltv_c2 -e smalltv_esp32 -e smalltv_esp32_wg -e smalltv_esp32_8mb -e smalltv_loader
 
       # tests/theme/run.sh also builds the memory test with -m32, so it
       # measures with the ESP8266's 32-bit pointers and sizes.
@@ -157,14 +157,15 @@ jobs:
 
       # One app image per target (web-UI OTA + GitHub self-update), the merged
       # factory images for first-time USB flashing of the ESP32 boards, and the
-      # minimal loader used to install onto a SmallTV-ultra. Two boards get a
-      # second app image: the ESP8266 gets -lean, with Home Assistant and the
-      # usage meter compiled out, and the NM-TV-154 gets -esp32-wg, with the
-      # WireGuard client compiled in. UPDATE_ASSET in src/config.h maps each
-      # build back to its own file name so self-update keeps a device on the
-      # variant it runs.
+      # minimal loader used to install onto a SmallTV-ultra. Two boards get extra
+      # app images: the ESP8266 gets -lean, with Home Assistant and the usage
+      # meter compiled out, and -theme, with everything but the theme engine
+      # compiled out; the NM-TV-154 gets -esp32-wg, with the WireGuard client
+      # compiled in. UPDATE_ASSET in src/config.h maps each build back to its own
+      # file name so self-update keeps a device on the variant it runs, and the
+      # asset gate above fails the run if a name here and a name there disagree.
       # always() with a tolerant copy, for the same reason as the upload below:
-      # when one env dies the other six still built, and those binaries are
+      # when one env dies the other seven still built, and those binaries are
       # usually what the next question needs. A missing file is a warning here,
       # not a reason to hand over nothing. The build step's own exit status still
       # decides whether the run is red.
@@ -175,6 +176,7 @@ jobs:
           copy() { [ -f "$1" ] && cp "$1" "$2" || echo "missing: $1"; }
           copy .pio/build/smalltv/firmware.bin dist/smalltv-mod-firmware.bin
           copy .pio/build/smalltv_lean/firmware.bin dist/smalltv-mod-firmware-lean.bin
+          copy .pio/build/smalltv_theme/firmware.bin dist/smalltv-mod-firmware-theme.bin
           copy .pio/build/smalltv_c2/firmware.bin dist/smalltv-mod-firmware-c2.bin
           copy .pio/build/smalltv_c2/firmware.factory.bin dist/smalltv-mod-firmware-c2.factory.bin
           copy .pio/build/smalltv_esp32/firmware.bin dist/smalltv-mod-firmware-esp32.bin

@@ -8,6 +8,7 @@ The four board targets share one codebase and build from [PlatformIO](https://pl
 ```bash
 pio run -e smalltv                 # ESP8266
 pio run -e smalltv_lean            # ESP8266, without HA screens or the usage meter
+pio run -e smalltv_theme           # ESP8266, theme engine only
 pio run -e smalltv_c2              # ESP32-C2
 pio run -e smalltv_esp32           # NM-TV-154 (classic ESP32)
 pio run -e smalltv_esp32_wg        # the same board, with the WireGuard client
@@ -17,7 +18,7 @@ pio device monitor -e smalltv_c2   # serial logs @ 115200
 pio run -e smalltv_loader          # ESP8266 loader for the SmallTV-ultra
 ```
 
-Seven envs, six published images plus the loader. Two boards get two images each: the ESP8266 (`smalltv` and `smalltv_lean`) and the NM-TV-154 (`smalltv_esp32` and `smalltv_esp32_wg`). Which file each env becomes is in [Which release file to download](/smalltv-mod/reference/release-assets/).
+Eight envs, seven published images plus the loader. Two boards get more than one image: the ESP8266 (`smalltv`, `smalltv_lean` and `smalltv_theme`) and the NM-TV-154 (`smalltv_esp32` and `smalltv_esp32_wg`). Which file each env becomes is in [Which release file to download](/smalltv-mod/reference/release-assets/).
 
 ## The smalltv_lean env
 
@@ -44,7 +45,7 @@ The env inherits `smalltv` through `extends` and interpolates its `build_flags` 
 
 ### Rolling your own combination
 
-The four `WITH_*` flags in `src/config.h` each default to 1 and can be set to 0 in any env, or passed through `PLATFORMIO_BUILD_FLAGS`:
+The six `WITH_*` flags in `src/config.h` each default to 1 and can be set to 0 in any env, or passed through `PLATFORMIO_BUILD_FLAGS`:
 
 | Flag | Drops | Static RAM saved on the ESP8266 |
 |------|-------|--------------------------------|
@@ -52,12 +53,32 @@ The four `WITH_*` flags in `src/config.h` each default to 1 and can be set to 0 
 | `WITH_TICKER=0` | The stock and crypto ticker | 3,328 B |
 | `WITH_RADAR=0` | The plane radar | 2,180 B |
 | `WITH_USAGE=0` | The Claude usage meter and its mascot | 1,080 B |
+| `WITH_NOTIFY=0` | The full-screen notification overlay | not measured |
+| `WITH_THEME=0` | The theme engine and its clock faces | not measured; the engine's cost is heap, not static |
 
 Each figure is that one flag measured on its own against the 55,536-byte standard build of 2.12.0. Combining flags saves slightly less than the sum, because the features share some code and string data.
 
+Note what the ticker and radar rows mean for a slim build: neither `features/ticker` nor `features/radar` carries a file-level `#if`, so both translation units still compile when their flag is 0. The saving is real anyway. Each feature's mode object (`g_tickerMode`, `g_radarMode`) is constant-initialized into `.data` rather than dynamically initialized, so it emits no `.init_array` entry to pin it; with the registry entry in `main.cpp` compiled out nothing references it, and `-fdata-sections` plus `--gc-sections` then drops the object, its vtable, its render path and the buffers that path reaches (`g_stocks`, `g_ac`). The measured 3,328 B and 2,180 B are that chain being collected.
+
 Every feature is guarded at the module level, so dropping one takes its code, its settings handling, and its web UI tab with it. The tab disappears because `/api/config` reports the compiled-in features and the UI hides what is missing, which means a slim build needs no separate web UI.
 
-Two caveats if you publish your own combination. `UPDATE_ASSET` still points at whichever variant your flags select, so a build that is neither standard nor lean will self-update into one of the published images and pick up the features you removed. And the mascot frame data lives in flash rather than RAM, so `WITH_USAGE=0` saves far more flash than heap.
+Two caveats if you publish your own combination. `UPDATE_ASSET` still points at whichever variant your flags select, so a build that is none of the three published ESP8266 images will self-update into one of them and pick up the features you removed. And the mascot frame data lives in flash rather than RAM, so `WITH_USAGE=0` saves far more flash than heap.
+
+## The smalltv_theme env
+
+`smalltv_theme` is the other end of the same trade: it keeps the theme engine and compiles out everything else. It is published as `smalltv-mod-firmware-theme.bin`, and it is for a device that only ever shows a theme clock.
+
+```bash
+pio run -e smalltv_theme
+```
+
+It exists because the theme engine is the feature most starved by a shared arena, and it is starved of *contiguous* heap rather than total free. `features/theme/ThemeMode.h` wants `ParseFreeHeap` (6,144 B) to parse a package and `RequestFreeHeap` (8,192 B) with a 3,072-byte largest block before a settings save; `ThemeMode::release()` exists only because a loaded theme and a second package parse do not fit together on this chip. Every byte of static dropped raises that ceiling and makes the release-and-reload dance rarer.
+
+Adding up the measured per-flag figures above, the five flags this env sets should return roughly 14 KB of static RAM, less whatever code and string data the features share. That is a projection from the table, not a measurement of this env: build it and read the `RAM:` line to get the real number, and `/api/status` on the device for `heap` and `maxblk`.
+
+Like `smalltv_lean`, it inherits `smalltv` through `extends` and interpolates `${env:smalltv.build_flags}` before adding its own, so the board, flash layout, libraries and shared flags stay identical. `-D SMALLTV_THEME` selects the matching `UPDATE_ASSET` in `src/config.h` so a theme-only device self-updates to the theme image rather than the standard one.
+
+Note that `smalltv_lean` is not a subset of this env and the two are not orderable: lean drops the theme and keeps the ticker and radar, this one does the reverse.
 
 ## The smalltv_loader env
 
