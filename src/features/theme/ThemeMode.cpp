@@ -3,7 +3,9 @@
 #include "Clock.h"
 #include "Gfx.h"
 #include "Platform.h"
+#include "ThemeCycle.h"
 #include "ThemeDataClient.h"
+#include "ThemeOrder.h"
 #include <Arduino_GFX_Library.h>
 #include <font/glcdfont.h>
 #include <algorithm>
@@ -33,8 +35,10 @@ class Panel : public smalltv::Display {
 constexpr uint32_t LoadFreeHeap = ThemeMode::ParseFreeHeap;
 constexpr uint32_t LoadLargestBlock = ThemeMode::ParseLargestBlock;
 const char* const WaitingForMemory = "Waiting for free memory";
+std::string str(const String& s) { return std::string(s.c_str()); }
 }
-void ThemeMode::begin(const Settings&) {
+void ThemeMode::begin(const Settings& s) {
+  pinnedId_ = s.themeId;
   LittleFS.mkdir("/themes");
   // An interrupted install leaves its staging file behind; boot is the one
   // point it is safe to remove without racing a request in progress.
@@ -105,13 +109,82 @@ void ThemeMode::refreshData() {
     break;
   }
 }
+String ThemeMode::activeId(const Settings& s) const {
+  return (s.themeCycleSec && cycleId_.length()) ? cycleId_ : s.themeId;
+}
+// Accrues the time this theme has actually been on screen and advances when
+// the dwell is up.
+//
+// main.cpp calls service() only on the active mode, so the gap between two
+// calls IS on-screen time -- no bookkeeping is needed for the carousel, the
+// notification overlay, the button info screen or AP mode, which all simply
+// stop calling. wake() clears lastTickMs_ so the gap while away is skipped.
+void ThemeMode::serviceCycle(const Settings& s) {
+  if (!s.themeCycleSec) {
+    // Switched off: drop the RAM-only entry so themeId takes the screen back.
+    cycleId_ = "";
+    cycleElapsedMs_ = lastTickMs_ = 0;
+    cycleSkips_ = 0;
+    return;
+  }
+  const uint32_t now = millis();
+  if (lastTickMs_) cycleElapsedMs_ += now - lastTickMs_;
+  lastTickMs_ = now;
+  if (cycleElapsedMs_ < (uint32_t)s.themeCycleSec * 1000UL) return;
+  cycleElapsedMs_ = 0;
+  cycleSkips_ = 0;   // a dwell ran to completion, so the lap is healthy
+  advanceCycle(s);
+}
+bool ThemeMode::advanceCycle(const Settings& s) {
+  const String current = activeId(s);
+  String next;
+
+  if (s.themeCycleOrder == THEME_ORDER_MANDATED) {
+    // The order file is maintained on install and delete, so it is normally
+    // complete. If it is missing or unreadable the cycle falls through to
+    // sorted rather than stalling on a device nobody can easily inspect.
+    ThemeFile order;
+    if (order.open("/themes/.order")) next = smalltv::orderSuccessor(order, str(current)).c_str();
+  }
+
+  if (!next.length()) {
+    const uint8_t order = (s.themeCycleOrder == THEME_ORDER_SHUFFLE) ? smalltv::CycleShuffle
+                                                                    : smalltv::CycleSorted;
+    smalltv::CycleCursor cursor(order, lapSeed_, str(current));
+    eachInstalledTheme([&cursor](const String& id) { cursor.offer(str(id)); });
+    if (cursor.empty()) return false;
+    next = cursor.chosen().c_str();
+    if (cursor.wrapped() && order == smalltv::CycleShuffle) {
+      // The wrap is the end of a lap: a fresh seed is a fresh permutation.
+      // Excluding what is on screen stops the new lap opening on the theme
+      // that just finished, which with two installed would be half of them.
+      lapSeed_ = lapSeed_ * 1664525u + 1013904223u + micros();
+      smalltv::CycleCursor restart(order, lapSeed_, std::string(), str(current));
+      eachInstalledTheme([&restart](const String& id) { restart.offer(str(id)); });
+      if (!restart.empty()) next = restart.chosen().c_str();
+    }
+  }
+
+  if (!next.length() || next == current) return false;
+  cycleId_ = next;
+  return true;
+}
 // Called when the theme should be redrawn from scratch, e.g. when a
 // notification overlay just finished. Switches to a different theme by
 // unloading first; otherwise leaves the loaded package alone and only marks
 // the engine's next update() as a full repaint.
 void ThemeMode::invalidate(const Settings& s) {
+  // A new pinned selection restarts the cycle from it; any other settings
+  // change leaves the cycle where it is, so saving an unrelated field does not
+  // jump the display back to themeId.
+  if (pinnedId_ != s.themeId) {
+    pinnedId_ = s.themeId;
+    cycleId_ = "";
+    cycleElapsedMs_ = 0;
+    cycleSkips_ = 0;
+  }
   const bool onScreen = s.mode == MODE_THEME || (s.mode == MODE_CAROUSEL && s.carouselTheme);
-  if (loadedId_ != s.themeId || !onScreen) unload();
+  if (loadedId_ != activeId(s) || !onScreen) unload();
   // A failed load may be retried after installation or settings changes.
   if (!package_) attempted_ = false;
   engine_.invalidate();
@@ -123,9 +196,10 @@ void ThemeMode::invalidate(const Settings& s) {
 // `loadedId_` together are the load state machine; everything past the load
 // block runs every call once a package is open.
 void ThemeMode::service(const Settings& s) {
-  if (loadedId_ != s.themeId) {
+  serviceCycle(s);
+  if (loadedId_ != activeId(s)) {
     unload();
-    loadedId_ = s.themeId;
+    loadedId_ = activeId(s);
   }
   // A web request, or the buffers of its reply, can briefly hold the heap a
   // load needs; the load then waits, checked again every frame.
@@ -138,14 +212,14 @@ void ThemeMode::service(const Settings& s) {
     attempted_ = true;
     std::string error;
     smalltv::Theme theme;
-    if (!smalltv::validId(s.themeId.c_str())) error = "Select an installed theme";
+    if (!smalltv::validId(loadedId_.c_str())) error = "Select an installed theme";
     else {
       file_.reset(new ThemeFile);
-      if (!file_->open("/themes/" + s.themeId + ".stheme")) error = "Theme file not found";
+      if (!file_->open("/themes/" + loadedId_ + ".stheme")) error = "Theme file not found";
       else {
         package_.reset(new smalltv::Package(*file_));
         if (!package_->load(theme, error)) package_.reset();
-        else if (theme.id != s.themeId.c_str()) {
+        else if (theme.id != loadedId_.c_str()) {
           error = "Theme ID mismatch";
           package_.reset();
         }
@@ -166,9 +240,24 @@ void ThemeMode::service(const Settings& s) {
       engine_.setTheme(std::move(theme), millis());
       engine_.setValues(dataValues_);
       error_ = "";
+      cycleSkips_ = 0;
     }
   }
   if (!package_) {
+    // While cycling, a package that will not load is skipped and the cycle
+    // moves on: gfxMessage() starts with fillScreen(C_BLACK), so parking on
+    // one bad package would put a black frame between every pair of good
+    // ones. The heap gate is a stall rather than a failure -- it retries next
+    // frame by design -- so it neither counts toward the lap limit nor
+    // advances past the theme. After a lap's worth of genuine failures the
+    // cycle stops and the error is reported as usual, so a /themes where
+    // nothing loads still says so.
+    if (s.themeCycleSec && attempted_ && error_ != WaitingForMemory &&
+        cycleSkips_ < MaxCycleSkips && advanceCycle(s)) {
+      ++cycleSkips_;
+      cycleElapsedMs_ = 0;
+      return;
+    }
     if (!messageDrawn_) {
       gfxMessage("THEMES", error_.c_str(), C_WHITE);
       messageDrawn_ = true;

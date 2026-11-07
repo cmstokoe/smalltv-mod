@@ -71,6 +71,48 @@ static void testLimits() {
   CHECK(s.clock.sunRise == 30 && s.clock.sunSet == 0 && s.clock.sunLow == 100, "partial update");
 }
 
+// Theme cycling. 0 means "off" rather than "as short as allowed", so it is
+// the one value that must survive a clamp whose floor is 60.
+static void testThemeCycle() {
+  Settings s;
+  s.setDefaults();
+  CHECK(s.themeCycleSec == 0, "cycling off by default: %u", (unsigned)s.themeCycleSec);
+  CHECK(s.themeCycleOrder == 0, "sorted order by default: %u", (unsigned)s.themeCycleOrder);
+
+  apply(s, "{\"themeCycleSec\":120,\"themeCycleOrder\":2}");
+  CHECK(s.themeCycleSec == 120, "dwell accepted: %u", (unsigned)s.themeCycleSec);
+  CHECK(s.themeCycleOrder == 2, "shuffle accepted: %u", (unsigned)s.themeCycleOrder);
+
+  // 0 stays 0: off is not clamped up to the minimum.
+  apply(s, "{\"themeCycleSec\":0}");
+  CHECK(s.themeCycleSec == 0, "zero stays off: %u", (unsigned)s.themeCycleSec);
+  // Anything else below the floor comes up to it, and a negative is off.
+  apply(s, "{\"themeCycleSec\":30}");
+  CHECK(s.themeCycleSec == 60, "30 raised to the 60 floor: %u", (unsigned)s.themeCycleSec);
+  apply(s, "{\"themeCycleSec\":-5}");
+  CHECK(s.themeCycleSec == 0, "negative reads as off: %u", (unsigned)s.themeCycleSec);
+  apply(s, "{\"themeCycleSec\":9999}");
+  CHECK(s.themeCycleSec == 3600, "capped at an hour: %u", (unsigned)s.themeCycleSec);
+
+  apply(s, "{\"themeCycleOrder\":9}");
+  CHECK(s.themeCycleOrder == 2, "order capped at shuffle: %u", (unsigned)s.themeCycleOrder);
+  apply(s, "{\"themeCycleOrder\":-1}");
+  CHECK(s.themeCycleOrder == 0, "order floored at sorted: %u", (unsigned)s.themeCycleOrder);
+
+  // A config written before this feature existed leaves both alone, which is
+  // what keeps an existing device on its current behaviour after an update.
+  Settings old;
+  old.setDefaults();
+  old.themeCycleSec = 300;
+  old.themeCycleOrder = 1;
+  apply(old, "{\"mode\":\"theme\",\"themeId\":\"pixel-room\"}");
+  CHECK(old.themeCycleSec == 300, "missing key keeps the value: %u", (unsigned)old.themeCycleSec);
+  CHECK(old.themeCycleOrder == 1, "missing order keeps the value: %u", (unsigned)old.themeCycleOrder);
+
+  // Wrong types are ignored rather than coerced.
+  apply(old, "{\"themeCycleSec\":\"120\",\"themeCycleOrder\":true}");
+  CHECK(old.themeCycleSec == 300 && old.themeCycleOrder == 1, "wrong types ignored");
+}
 static void testRoundTrip() {
   Settings s;
   s.setDefaults();
@@ -213,6 +255,7 @@ static void testExclusive() {
 int main() {
   testDefaults();
   testLimits();
+  testThemeCycle();
   testRoundTrip();
   testOldConfigs();
   testRadarLocation();

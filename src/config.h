@@ -435,3 +435,21 @@
 #ifndef WITH_THEME
 #define WITH_THEME 1
 #endif
+
+// Theme cycling: show each installed package in turn. 0 is off, and is the
+// default, so a device that has never asked for it is unchanged.
+//
+// The floor is a minute because a change is not free. Only one theme fits in
+// RAM on the ESP8266 (issue #30), so each one is unload -> parse -> full
+// 240x240 repaint, and any data source the incoming theme declares refetches
+// from scratch -- synchronously on the main loop on that chip, up to
+// DataTimeoutMs each. Below a minute the device would spend a visible share of
+// its time repainting and refetching rather than showing a clock.
+#define DEFAULT_THEME_CYCLE_SEC   0
+#define THEME_CYCLE_MIN_SEC      60
+#define THEME_CYCLE_MAX_SEC    3600
+// Order modes; the values are persisted in config.json, so they are fixed.
+// Kept in step with smalltv::ThemeCycleOrder in features/theme/ThemeCycle.h.
+#define THEME_ORDER_SORTED        0
+#define THEME_ORDER_MANDATED      1
+#define THEME_ORDER_SHUFFLE       2
