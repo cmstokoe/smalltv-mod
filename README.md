@@ -37,7 +37,7 @@ Check the board before you build, because the variants flash differently.
 |---|---|---|---|---|---|---|
 | Photo | <img src="docs/public/assets/product-8266.png" alt="The SmallTV (ESP8266)" width="240"> | <img src="docs/public/assets/product-ultra.png" alt="The SmallTV-ultra" width="240"> | <img src="docs/public/assets/product-sdpro.png" alt="The SDPro Smart Weather Clock" width="240"> | <img src="docs/public/assets/product-c2.png" alt="The SmallTV (ESP32-C2)" width="240"> | <img src="docs/public/assets/product-esp32.png" alt="The NM-TV-154 (ESP32)" width="240"> | <img src="docs/public/assets/product-pro.png" alt="The GeekMagic SmallTV Pro" width="240"> |
 | MCU | ESP-12F (ESP8266), 4 MB flash | same ESP-12F (ESP8266), 4 MB flash | ESP-12 (ESP8266), 4 MB flash | ESP32-C2 / ESP8684, 4 MB flash | ESP32-WROOM-32E, 4 MB flash | classic ESP32, 8 MB flash |
-| Build env | `smalltv`, or `smalltv_lean` | `smalltv` (same image, `smalltv_loader` to install) | `smalltv` (same image, `smalltv_loader` to install) | `smalltv_c2` | `smalltv_esp32`, or `smalltv_esp32_wg` | `smalltv_esp32_8mb` |
+| Build env | `smalltv`, `smalltv_lean`, or `smalltv_theme` | `smalltv` (same image, `smalltv_loader` to install) | `smalltv` (same image, `smalltv_loader` to install) | `smalltv_c2` | `smalltv_esp32`, or `smalltv_esp32_wg` | `smalltv_esp32_8mb` |
 | Display | 1.54" 240×240 IPS ST7789 | same panel | same panel and pin map | same panel, RGB order | same panel | same panel |
 | Flashing | OTA from the stock web UI, or UART header | two-step [loader](#flashing) then OTA, or UART | the same two steps with the loader renamed to `SDP…`, or UART | USB-C via the onboard CH340C (esptool) | USB via esptool | OTA from the stock web UI, or UART header |
 | WireGuard VPN | no, the chip has neither the flash nor the heap | no, same chip | no, same chip | yes | yes, in the separate `-esp32-wg` image; the default image leaves it out to keep flash headroom | yes, the 8 MB layout has room to spare |
@@ -84,6 +84,7 @@ Eleven files come with each release. Pick by board first, then by whether you ar
 |------|-------|-----------|
 | `smalltv-mod-firmware.bin` | SmallTV, SmallTV-ultra, SDPro (ESP8266) | The normal install and every later update |
 | `smalltv-mod-firmware-lean.bin` | Same ESP8266 boards | The same device when it needs more heap. HA screens and the usage meter are compiled out |
+| `smalltv-mod-firmware-theme.bin` | Same ESP8266 boards | The same device when it only shows a theme clock. Everything but the theme engine is compiled out |
 | `smalltv-mod-loader.bin` | SmallTV-ultra, SDPro (ESP8266) | One-time first install when the stock updater rejects the full image |
 | `smalltv-mod-firmware-c2.bin` | SmallTV (ESP32-C2) | Updates |
 | `smalltv-mod-firmware-c2.factory.bin` | SmallTV (ESP32-C2) | First install over USB-C |
@@ -94,7 +95,7 @@ Eleven files come with each release. Pick by board first, then by whether you ar
 | `smalltv-mod-firmware-esp32-pro.bin` | SmallTV Pro (ESP32, 8 MB) | First install over the stock web UI, and every later update |
 | `smalltv-mod-firmware-esp32-pro.factory.bin` | SmallTV Pro (ESP32, 8 MB) | Direct install or recovery over the UART header |
 
-The names follow one pattern, `smalltv-mod-<image>[-<target>][.factory].bin`. No target suffix means the original ESP8266; `-lean`, `-c2`, `-esp32`, `-esp32-wg`, and `-esp32-pro` name the others. A `.factory` image is the merged bootloader, partition table, and app, written at offset `0x0` over a cable; without it the file is an app image sized for an OTA slot. The System tab shows which variant a device runs, and self-update keeps it on that variant. Full detail in [Which release file to download](https://giovi321.github.io/smalltv-mod/reference/release-assets/).
+The names follow one pattern, `smalltv-mod-<image>[-<target>][.factory].bin`. No target suffix means the original ESP8266; `-lean`, `-theme`, `-c2`, `-esp32`, `-esp32-wg`, and `-esp32-pro` name the others. A `.factory` image is the merged bootloader, partition table, and app, written at offset `0x0` over a cable; without it the file is an app image sized for an OTA slot. The System tab shows which variant a device runs, and self-update keeps it on that variant. Full detail in [Which release file to download](https://giovi321.github.io/smalltv-mod/reference/release-assets/).
 
 Or [build it yourself](#building-from-source).
 
@@ -102,7 +103,7 @@ Or [build it yourself](#building-from-source).
 
 The right method depends on your board. The steps below are the short version; the [Flashing guide](https://giovi321.github.io/smalltv-mod/getting-started/flashing/) covers recovery, backups, and troubleshooting.
 
-**SmallTV (ESP8266).** The stock firmware exposes an OTA updater, so you can install this without opening the device. Find its IP, browse to `http://<device-ip>/update`, and upload `smalltv-mod-firmware.bin`, or `smalltv-mod-firmware-lean.bin` for the build that trades Home Assistant screens and the usage meter for 8,732 bytes of heap. Back up the stock image first if you might want it back.
+**SmallTV (ESP8266).** The stock firmware exposes an OTA updater, so you can install this without opening the device. Find its IP, browse to `http://<device-ip>/update`, and upload `smalltv-mod-firmware.bin`, or `smalltv-mod-firmware-lean.bin` for the build that trades Home Assistant screens and the usage meter for 8,732 bytes of heap, or `smalltv-mod-firmware-theme.bin` for the build that keeps only the theme engine. Back up the stock image first if you might want it back.
 
 **SmallTV-ultra.** Same ESP8266 hardware, but the stock "Ultra" firmware reserves most of the flash for image storage, so its OTA slot is too small for `smalltv-mod-firmware.bin` and rejects it with `Not Enough Space`. Install in two steps, no soldering: flash `smalltv-mod-loader.bin` at `http://<device-ip>/update` (it fits the small slot), join the open `SmallTV-Loader` AP it opens at `192.168.4.1`, then upload `smalltv-mod-firmware.bin` at `http://192.168.4.1/update`. UART is the fallback (`esptool write_flash 0x0 smalltv-mod-firmware.bin`).
 
@@ -157,6 +158,7 @@ Requires [PlatformIO](https://platformio.org/). Pick the env for your board:
 ```bash
 pio run -e smalltv                 # ESP8266
 pio run -e smalltv_lean            # ESP8266, without HA screens or the usage meter
+pio run -e smalltv_theme           # ESP8266, theme engine only
 pio run -e smalltv_c2              # ESP32-C2
 pio run -e smalltv_esp32           # NM-TV-154 (classic ESP32)
 pio run -e smalltv_esp32_wg        # the same, with the WireGuard client

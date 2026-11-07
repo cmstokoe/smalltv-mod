@@ -22,9 +22,9 @@
 // Release asset the GitHub self-updater pulls, and the short variant name shown
 // in the web UI. One app image per target, plus a second one for the two boards
 // that ship a stripped or extended build of the same hardware: the ESP8266
-// (standard and lean) and the NM-TV-154 (with and without the WireGuard
-// client). A device keeps its own variant across a self-update instead of
-// silently gaining or losing features.
+// (standard, lean, and theme-only) and the NM-TV-154 (with and without the
+// WireGuard client). A device keeps its own variant across a self-update
+// instead of silently gaining or losing features.
 //
 // Order matters: this is an #if defined() chain, and both SMALLTV_ESP32_PRO and
 // SMALLTV_ESP32_WG are defined alongside SMALLTV_ESP32 rather than instead of
@@ -42,6 +42,9 @@
 #elif defined(SMALLTV_ESP32)
   #define UPDATE_ASSET "smalltv-mod-firmware-esp32.bin"
   #define FW_VARIANT   "esp32"
+#elif defined(SMALLTV_THEME)
+  #define UPDATE_ASSET "smalltv-mod-firmware-theme.bin"
+  #define FW_VARIANT   "esp8266-theme"
 #elif defined(SMALLTV_LEAN)
   #define UPDATE_ASSET "smalltv-mod-firmware-lean.bin"
   #define FW_VARIANT   "esp8266-lean"
