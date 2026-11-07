@@ -17,6 +17,50 @@ files.
 4. Set the timezone under **Clock & night mode**. Theme mode starts NTP even when
    night mode is off. Unsynchronized time fields display `--`.
 
+## Cycle through your themes
+
+With more than one package installed, theme mode can show each in turn instead
+of only the selected one.
+
+1. Set **Cycle every** to the number of seconds each theme should stay up. `0`,
+   the default, switches cycling off and keeps today's behaviour exactly.
+2. Choose a **Cycle order**: `A-Z` by theme ID, `Custom` for a sequence you
+   arrange yourself, or `Shuffle`.
+
+**Shuffle shows every installed theme once before any of them repeats**, then
+reshuffles. It is not a random pick each time, so nothing is left out for long.
+
+**Custom** reveals a list with ▲/▼ beside each theme; the cycle runs top to
+bottom. The order is kept on the device, survives a reboot, and a newly
+installed theme joins at the end rather than appearing in the middle of a
+sequence you arranged. Removing a theme drops it from the order.
+
+The selected theme — the one you picked with **Use theme** — stays the pinned
+selection and is where the cycle starts. Cycling never changes it, so switching
+cycling off returns to that theme, and the setting is not rewritten to flash
+every time the picture changes.
+
+### Why a minute is the shortest step
+
+One minute is the floor, and it is a hardware limit rather than caution. Only
+one theme fits in RAM on the ESP8266, so every change is a full reload: the
+running package is dropped, the next is parsed from flash, and all 240×240
+pixels are repainted. The repaint is visible — the old theme holds the screen
+during the parse, then the new one paints over it top to bottom.
+
+Any theme that fetches data starts that over too. Values are not kept per theme
+across a change, so a theme with a JSON source shows `--` in those fields until
+each source has been fetched again — on the ESP8266 those fetches run one at a
+time on the main loop. At a shorter dwell the device would spend a visible part
+of its time reloading rather than showing you a clock.
+
+### In a carousel
+
+Cycling works alongside **Theme clock** in the carousel, and the dwell counts
+only the time a theme is actually on screen. If the carousel gives the theme
+slot 30 seconds at a time and the theme dwell is two minutes, each theme is up
+for four visits before the next one appears, rather than never changing.
+
 The repository includes `examples/themes/pixel-room.stheme`, a complete example
 with a background, animated cat, time, and date. Its source assets and manifest
 are in `examples/themes/pixel-room/`. `examples/themes/live-status.stheme`
