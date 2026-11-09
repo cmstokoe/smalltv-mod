@@ -4,6 +4,7 @@
 #include "Gfx.h"
 #include "Platform.h"
 #include "ThemeDataClient.h"
+#include "ThemeRotation.h"
 #include <Arduino_GFX_Library.h>
 #include <font/glcdfont.h>
 #include <algorithm>
@@ -33,12 +34,80 @@ class Panel : public smalltv::Display {
 constexpr uint32_t LoadFreeHeap = ThemeMode::ParseFreeHeap;
 constexpr uint32_t LoadLargestBlock = ThemeMode::ParseLargestBlock;
 const char* const WaitingForMemory = "Waiting for free memory";
+// The installed id after `after` (RotationCursor). Like listThemes() and
+// installedCount() this reads the directory entries alone, never opening a
+// package: it runs every dwell, and a package is parsed by the load that
+// follows anyway. A name that is not a valid id is passed over here, so the
+// rotation cannot land on a file a selection could not.
+String nextThemeId(const String& after) {
+  smalltv::RotationCursor cursor(after.c_str());
+  auto offer = [&cursor](String name) {
+    int slash = name.lastIndexOf('/');
+    if (slash >= 0) name = name.substring(slash + 1);
+    if (!name.endsWith(".stheme")) return;
+    String id = name.substring(0, name.length() - 7);
+    if (smalltv::validId(id.c_str())) cursor.offer(id.c_str());
+  };
+#if defined(SMALLTV_ESP8266)
+  Dir dir = LittleFS.openDir("/themes");
+  while (dir.next()) {
+    if (dir.isFile()) offer(dir.fileName());
+    yield();
+  }
+#else
+  File dir = LittleFS.open("/themes", "r");
+  for (File entry = dir.openNextFile(); entry; entry = dir.openNextFile()) {
+    if (!entry.isDirectory()) offer(entry.name());
+    yield();
+  }
+  dir.close();
+#endif
+  return String(cursor.next().c_str());
+}
 }
 void ThemeMode::begin(const Settings&) {
   LittleFS.mkdir("/themes");
   // An interrupted install leaves its staging file behind; boot is the one
   // point it is safe to remove without racing a request in progress.
   LittleFS.remove("/themes/.upload");
+}
+const String& ThemeMode::activeId(const Settings& s) const {
+  return (s.themeRotateSec && rotateId_.length()) ? rotateId_ : s.themeId;
+}
+void ThemeMode::advance() {
+  String next = nextThemeId(rotateId_);
+  if (next.length()) rotateId_ = next;
+  rotateAt_ = millis();
+}
+// Runs before the load, so the id it settles on is the one that frame draws.
+void ThemeMode::rotate(const Settings& s) {
+  if (!s.themeRotateSec) {
+    // Turned off mid-rotation: back to the selected theme, which the load
+    // below picks up as an ordinary change of id.
+    rotateId_ = rotateFrom_ = "";
+    rotateSkips_ = 0;
+    return;
+  }
+  // Seeded from the selection, and seeded again when that changes, so "Use
+  // theme" shows that theme at once instead of at the end of the dwell. With
+  // nothing selected there is nothing to start from, and the load reports it.
+  if (!rotateId_.length() || rotateFrom_ != s.themeId) {
+    rotateFrom_ = rotateId_ = s.themeId;
+    rotateAt_ = millis();
+    rotateSkips_ = 0;
+    return;
+  }
+  // `attempted_` with no package is a load that failed, which service() has
+  // already reported through error_; move on rather than show it for a dwell.
+  if (attempted_ && !package_) {
+    if (rotateSkips_ < MaxSkips) {
+      ++rotateSkips_;
+      advance();
+    }
+    return;
+  }
+  if (package_) rotateSkips_ = 0;
+  if (millis() - rotateAt_ >= (uint32_t)s.themeRotateSec * 1000UL) advance();
 }
 // Drops every bit of state for the currently loaded theme -- the open
 // package/file, any in-flight or fetched data, and the engine itself -- so
@@ -111,7 +180,7 @@ void ThemeMode::refreshData() {
 // the engine's next update() as a full repaint.
 void ThemeMode::invalidate(const Settings& s) {
   const bool onScreen = s.mode == MODE_THEME || (s.mode == MODE_CAROUSEL && s.carouselTheme);
-  if (loadedId_ != s.themeId || !onScreen) unload();
+  if (loadedId_ != activeId(s) || !onScreen) unload();
   // A failed load may be retried after installation or settings changes.
   if (!package_) attempted_ = false;
   engine_.invalidate();
@@ -123,9 +192,11 @@ void ThemeMode::invalidate(const Settings& s) {
 // `loadedId_` together are the load state machine; everything past the load
 // block runs every call once a package is open.
 void ThemeMode::service(const Settings& s) {
-  if (loadedId_ != s.themeId) {
+  rotate(s);
+  const String want = activeId(s);
+  if (loadedId_ != want) {
     unload();
-    loadedId_ = s.themeId;
+    loadedId_ = want;
   }
   // A web request, or the buffers of its reply, can briefly hold the heap a
   // load needs; the load then waits, checked again every frame.
@@ -138,14 +209,14 @@ void ThemeMode::service(const Settings& s) {
     attempted_ = true;
     std::string error;
     smalltv::Theme theme;
-    if (!smalltv::validId(s.themeId.c_str())) error = "Select an installed theme";
+    if (!smalltv::validId(want.c_str())) error = "Select an installed theme";
     else {
       file_.reset(new ThemeFile);
-      if (!file_->open("/themes/" + s.themeId + ".stheme")) error = "Theme file not found";
+      if (!file_->open("/themes/" + want + ".stheme")) error = "Theme file not found";
       else {
         package_.reset(new smalltv::Package(*file_));
         if (!package_->load(theme, error)) package_.reset();
-        else if (theme.id != s.themeId.c_str()) {
+        else if (theme.id != want.c_str()) {
           error = "Theme ID mismatch";
           package_.reset();
         }
@@ -169,7 +240,12 @@ void ThemeMode::service(const Settings& s) {
     }
   }
   if (!package_) {
-    if (!messageDrawn_) {
+    // A rotation about to pass this package over leaves the screen alone:
+    // gfxMessage() blanks it, so reporting every unloadable package would
+    // put a black frame between themes. The message still appears once the
+    // skips run out, which is a /themes where nothing loads.
+    const bool skipping = s.themeRotateSec && attempted_ && rotateSkips_ < MaxSkips;
+    if (!messageDrawn_ && !skipping) {
       gfxMessage("THEMES", error_.c_str(), C_WHITE);
       messageDrawn_ = true;
     }

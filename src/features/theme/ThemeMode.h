@@ -32,6 +32,9 @@ class ThemeMode : public DisplayMode {
   void wake(const Settings&) override {
     engine_.invalidate();
     messageDrawn_ = false;
+    // The dwell counts the time a theme is on screen, so a carousel that was
+    // away for longer than one does not switch the moment it comes back.
+    rotateAt_ = millis();
   }
   const String& error() const { return error_; }
   // What parsing a package needs: its peak heap (tests/theme/test_memory.cpp
@@ -59,6 +62,23 @@ class ThemeMode : public DisplayMode {
  private:
   void unload();
   void refreshData();
+  // The theme to show: the rotation's current entry while it runs, otherwise
+  // the one selection picked. Everything past this point loads whatever it
+  // names, so the rotation needs no load path of its own.
+  const String& activeId(const Settings& s) const;
+  // Moves the rotation on, and seeds it from the selection when it starts or
+  // when a new theme is selected under it.
+  void rotate(const Settings& s);
+  void advance();
+  // A theme a rotation cannot load is passed over at once rather than holding
+  // the screen for a whole dwell. Stopping after a lap (MaxThemes in
+  // ThemeWeb.cpp) means a /themes where nothing loads shows its error instead
+  // of turning over packages forever.
+  static constexpr uint8_t MaxSkips = 16;
+  String   rotateId_;          // empty while the rotation is off or unseeded
+  String   rotateFrom_;        // the selection it was seeded from
+  uint32_t rotateAt_ = 0;      // millis() of the last change
+  uint8_t  rotateSkips_ = 0;   // packages passed over since one last loaded
   smalltv::Engine engine_;
   std::unique_ptr<ThemeFile> file_;
   std::unique_ptr<smalltv::Package> package_;
