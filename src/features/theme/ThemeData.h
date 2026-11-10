@@ -24,14 +24,22 @@ constexpr uint32_t DataTimeoutMs = 3000;
 // never given up on. The cap is a floor on frequency -- a failure never makes
 // a source wait longer than its own interval -- so a source polled faster than
 // a ladder step simply keeps its own cadence.
-constexpr uint32_t DataRetryMs = 10000;  // first retry after a failure
-constexpr uint8_t DataRetryMax = 4;      // ladder length: 10 s, 20, 40, 80
+// The first retry is quick, because the overwhelmingly common failure is the
+// heap dip around a load and it has usually passed by the time the repaint
+// finishes. From the second it backs off properly, so a source that is really
+// unreachable is not hammered.
+constexpr uint32_t DataRetryMs = 2000;      // first retry after a failure
+constexpr uint32_t DataRetryStepMs = 5000;  // second retry; doubles from there
+constexpr uint8_t DataRetryMax = 5;         // ladder: 2 s, 5, 10, 20, 40
 
 inline uint32_t dataRetryMs(uint32_t intervalSec, uint8_t fails) {
   const uint32_t interval = intervalSec * 1000UL;
   if (!fails || fails > DataRetryMax) return interval;   // ladder spent -> normal cadence
   uint32_t back = DataRetryMs;
-  for (uint8_t i = 1; i < fails; ++i) back <<= 1;
+  if (fails > 1) {
+    back = DataRetryStepMs;
+    for (uint8_t i = 2; i < fails; ++i) back <<= 1;
+  }
   return back < interval ? back : interval;              // never slower than a good fetch
 }
 
