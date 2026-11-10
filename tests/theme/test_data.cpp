@@ -119,5 +119,27 @@ int main() {
   assert(!requests.take());engine.setValues(result->values);
   assert(engine.update(2501,nullptr).empty());
   engine.update(2551,nullptr);assert(engine.states()[0].scrollOffset==1);
+  // The retry ladder: a good fetch waits its interval, a failed one comes back
+  // on 10/20/40/80 s, and once the ladder is spent the source settles back
+  // into its normal cadence -- never given up on, never polled faster than a
+  // healthy source.
+  assert(dataRetryMs(300,0)==300000);
+  assert(dataRetryMs(300,1)==10000);
+  assert(dataRetryMs(300,2)==20000);
+  assert(dataRetryMs(300,3)==40000);
+  assert(dataRetryMs(300,4)==80000);
+  assert(dataRetryMs(300,5)==300000);
+  assert(dataRetryMs(300,250)==300000);
+  // The cap is a floor on frequency, not a ceiling: a source whose interval is
+  // shorter than a ladder step is never slowed down by a failure. A short
+  // interval can therefore retry sooner than the ladder says (10 s here),
+  // which is the same behaviour as the ticker.
+  assert(dataRetryMs(15,1)==10000);
+  assert(dataRetryMs(15,2)==15000);
+  assert(dataRetryMs(5,1)==5000);
+  // A zero interval stays zero: the ladder may not invent a delay where the
+  // theme asked for none.
+  assert(dataRetryMs(0,0)==0&&dataRetryMs(0,3)==0);
+
   std::cout<<"theme data deadline and asynchronous result tests passed\n";
 }

@@ -54,6 +54,7 @@ void ThemeMode::unload() {
   file_.reset();
   dataNextMs_.clear();
   dataScheduled_.clear();
+  dataFails_.clear();
   dataValues_.clear();
   dataCursor_ = 0;
   engine_.setValues({});
@@ -81,6 +82,7 @@ void ThemeMode::release(uint32_t needFree, uint32_t needLargestBlock) {
 void ThemeMode::refreshData() {
   const auto& sources = engine_.theme().data;
   if (auto result = dataRequests_.take()) {
+    const size_t index = result->index;
     if (result->success) {
       // Merge into the running set by key rather than replace it wholesale:
       // a source's fields persist across refreshes of the *other* sources, so
@@ -91,9 +93,18 @@ void ThemeMode::refreshData() {
         else existing->value = std::move(value.value);
       }
       engine_.setValues(dataValues_);
+      dataFails_[index] = 0;
+      // Schedule from completion, preserving the interval even for slow sources.
+      dataNextMs_[index] = millis() + sources[index].interval * 1000UL;
+    } else {
+      // A failure must not be rescheduled like a success: that cost the source
+      // a whole interval -- 300 s by default -- with its fields at "--"
+      // throughout, and with a cycle running on a shorter dwell it never
+      // recovered at all, because the theme was unloaded before the retry fell
+      // due and the reload cleared the schedule again.
+      if (dataFails_[index] < 250) ++dataFails_[index];
+      dataNextMs_[index] = millis() + smalltv::dataRetryMs(sources[index].interval, dataFails_[index]);
     }
-    // Schedule from completion, preserving the interval even for slow sources.
-    dataNextMs_[result->index] = millis() + sources[result->index].interval * 1000UL;
   }
   if (sources.empty() || dataRequests_.busy() || WiFi.status() != WL_CONNECTED) return;
   // Scan forward from `dataCursor_` for the first source that is due (an
@@ -234,6 +245,7 @@ void ThemeMode::service(const Settings& s) {
       if (!keepData_ || dataNextMs_.size() != theme.data.size()) {
         dataNextMs_.assign(theme.data.size(), 0);
         dataScheduled_.assign(theme.data.size(), false);
+        dataFails_.assign(theme.data.size(), 0);
         dataValues_.clear();
         dataCursor_ = 0;
       }
