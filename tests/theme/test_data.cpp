@@ -127,16 +127,32 @@ int main() {
   assert(dataRetryMs(300,1)==2000);
   assert(dataRetryMs(300,2)==5000);
   assert(dataRetryMs(300,3)==10000);
-  assert(dataRetryMs(300,4)==20000);
-  assert(dataRetryMs(300,5)==40000);
-  assert(dataRetryMs(300,6)==300000);
+  // Capped: the step that would have been 20 s, and every one after it.
+  assert(dataRetryMs(300,4)==10000);
+  assert(dataRetryMs(300,5)==10000);
+  assert(dataRetryMs(300,6)==10000);
+  assert(dataRetryMs(300,7)==10000);
+  assert(dataRetryMs(300,8)==300000);
   assert(dataRetryMs(300,250)==300000);
+
+  // The property the cap exists for: a source failing from the moment its
+  // theme loads is still retried in the last seconds of the shortest dwell
+  // (THEME_CYCLE_MIN_SEC, 60 s). Walk the ladder and check the final attempt
+  // lands inside that window -- with a 40 s step it fell at 77 s, outside it,
+  // leaving 23 s of the dwell with no attempt in it.
+  uint32_t at = 0, last = 0;
+  for (uint8_t f = 1; f <= DataRetryMax; ++f) {
+    last = at;
+    at += dataRetryMs(300, f);
+  }
+  assert(last < 60000 && at >= 57000);
   // The cap is a floor on frequency, not a ceiling: a source whose interval is
   // shorter than a ladder step is never slowed down by a failure, and a short
   // interval can retry sooner than the ladder says. Same as the ticker.
   assert(dataRetryMs(15,1)==2000);
   assert(dataRetryMs(15,3)==10000);
-  assert(dataRetryMs(15,4)==15000);
+  assert(dataRetryMs(15,7)==10000);
+  assert(dataRetryMs(8,3)==8000);
   assert(dataRetryMs(1,1)==1000);
   // A zero interval stays zero: the ladder may not invent a delay where the
   // theme asked for none.

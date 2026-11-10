@@ -26,11 +26,22 @@ constexpr uint32_t DataTimeoutMs = 3000;
 // a ladder step simply keeps its own cadence.
 // The first retry is quick, because the overwhelmingly common failure is the
 // heap dip around a load and it has usually passed by the time the repaint
-// finishes. From the second it backs off properly, so a source that is really
-// unreachable is not hammered.
+// finishes. It then backs off, but only as far as DataRetryCapMs: a step
+// longer than that is no use here, because the cycle's dwell floor is 60 s
+// (THEME_CYCLE_MIN_SEC) and a theme is unloaded when it ends. A ladder that
+// backed off to 40 s left the last stretch of every dwell with no attempt in
+// it at all, so a source that recovered during that stretch stayed at "--"
+// until the theme came round again.
+//
+// The ladder therefore spans a dwell rather than growing without bound: 2 s,
+// 5, then 10 s apart up to DataRetryMax attempts, 57 s of trying in all.
+// After that the source settles into its declared interval and keeps retrying
+// there -- the shape ticker/StockClient.cpp uses, and the reason a genuinely
+// dead endpoint is never given up on but is never polled hard either.
 constexpr uint32_t DataRetryMs = 2000;      // first retry after a failure
 constexpr uint32_t DataRetryStepMs = 5000;  // second retry; doubles from there
-constexpr uint8_t DataRetryMax = 5;         // ladder: 2 s, 5, 10, 20, 40
+constexpr uint32_t DataRetryCapMs = 10000;  // but never backs off past this
+constexpr uint8_t DataRetryMax = 7;         // ladder: 2 s, 5, then 10 x5
 
 inline uint32_t dataRetryMs(uint32_t intervalSec, uint8_t fails) {
   const uint32_t interval = intervalSec * 1000UL;
@@ -39,6 +50,7 @@ inline uint32_t dataRetryMs(uint32_t intervalSec, uint8_t fails) {
   if (fails > 1) {
     back = DataRetryStepMs;
     for (uint8_t i = 2; i < fails; ++i) back <<= 1;
+    if (back > DataRetryCapMs) back = DataRetryCapMs;
   }
   return back < interval ? back : interval;              // never slower than a good fetch
 }
