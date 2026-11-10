@@ -115,6 +115,9 @@ class ThemeMode : public DisplayMode {
   String loadedId_, error_;
   std::vector<uint32_t> dataNextMs_;
   std::vector<bool> dataScheduled_;
+  // Consecutive failures per source, driving the retry ladder in
+  // smalltv::dataPeriodMs(). Reset by a fetch that succeeds.
+  std::vector<uint8_t> dataFails_;
   std::vector<smalltv::ThemeValue> dataValues_;
   smalltv::DataRequests dataRequests_;
   size_t dataCursor_ = 0;

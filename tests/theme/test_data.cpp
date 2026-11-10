@@ -119,5 +119,28 @@ int main() {
   assert(!requests.take());engine.setValues(result->values);
   assert(engine.update(2501,nullptr).empty());
   engine.update(2551,nullptr);assert(engine.states()[0].scrollOffset==1);
+
+  // Retry cadence. A failed fetch used to be rescheduled exactly like a
+  // successful one, so a source that was refused sat at "--" for its whole
+  // interval -- and, with a theme cycle on a shorter dwell, never recovered at
+  // all, because the reload cleared the schedule before the retry fell due.
+  const uint32_t fiveMinutes=300;
+  assert(dataPeriodMs(fiveMinutes,0)==300000);          // healthy: its own interval
+  assert(dataPeriodMs(fiveMinutes,1)==DataRetryMs);     // 10 s
+  assert(dataPeriodMs(fiveMinutes,2)==DataRetryMs*2);   // 20 s
+  assert(dataPeriodMs(fiveMinutes,3)==DataRetryMs*4);   // 40 s
+  assert(dataPeriodMs(fiveMinutes,4)==DataRetryMs*8);   // 80 s
+  // Ladder spent: back to the normal cadence, and never given up on.
+  assert(dataPeriodMs(fiveMinutes,DataRetryMax+1)==300000);
+  assert(dataPeriodMs(fiveMinutes,255)==300000);
+  // The backoff never polls a failing source faster than its own interval
+  // would, so a source that asks for 5 s is not hammered every 10 s either.
+  assert(dataPeriodMs(5,1)==5000);
+  assert(dataPeriodMs(5,4)==5000);
+  // A retry must always be sooner than waiting out a long interval, which is
+  // the whole point of the ladder.
+  for(uint8_t fails=1;fails<=DataRetryMax;++fails)
+    assert(dataPeriodMs(fiveMinutes,fails)<fiveMinutes*1000);
+
   std::cout<<"theme data deadline and asynchronous result tests passed\n";
 }
