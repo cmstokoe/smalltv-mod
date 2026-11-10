@@ -54,14 +54,6 @@ each source has been fetched again — on the ESP8266 those fetches run one at a
 time on the main loop. At a shorter dwell the device would spend a visible part
 of its time reloading rather than showing you a clock.
 
-A fetch that fails is retried on a short doubling backoff — 10 s, 20, 40, 80 —
-rather than waiting out the source's own `interval`, and then settles into that
-interval and keeps trying. This matters most right after a change: the package
-parse has just peaked the memory use, so a fetch started in that moment is the
-one most likely to be refused. The first fetch after a theme loads is held back
-briefly for the same reason. If a field stays at `--`, the serial console logs
-the first failure of each run with the free heap at the time.
-
 ### In a carousel
 
 Cycling works alongside **Theme clock** in the carousel, and the dwell counts

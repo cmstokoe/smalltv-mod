@@ -8,36 +8,6 @@ namespace smalltv {
 constexpr size_t MaxDataBody = 2048;
 constexpr uint32_t DataTimeoutMs = 3000;
 
-// A fetch that failed comes back on a short doubling backoff instead of its
-// declared interval. Without this, one refused fetch costs a source its whole
-// interval -- 300 s by default -- and the fields it feeds sit at "--" until
-// then. The common refusal is transient and clears in seconds: both fetch
-// paths give up when the heap is momentarily too low (ThemeDataClient.cpp
-// wants 18000 B free, and 8192 B more for the task's stack off the ESP8266),
-// and the moment that is most likely is the tick a theme is loaded in, when
-// the package parse has just peaked the heap.
-//
-// Same shape as the ticker's ladder (symbolPeriodMs in ticker/StockClient.cpp)
-// and capped the same way: once the ladder is spent a source settles into its
-// normal cadence and keeps retrying there, so a genuinely dead endpoint is
-// never given up on and never polled faster than a healthy one.
-constexpr uint32_t DataRetryMs = 10000;  // first retry after a failure
-constexpr uint8_t DataRetryMax = 4;      // ladder length: 10 s, 20, 40, 80
-
-inline uint32_t dataPeriodMs(uint32_t intervalSec, uint8_t fails) {
-  const uint32_t interval = intervalSec * 1000UL;
-  if (!fails || fails > DataRetryMax) return interval;
-  uint32_t back = DataRetryMs;
-  for (uint8_t i = 1; i < fails; ++i) back <<= 1;
-  return back < interval ? back : interval;
-}
-
-// How long after a theme is loaded before its first fetch may start. The parse
-// has just peaked the heap and a full 240x240 repaint runs immediately after,
-// so a fetch started in that same tick meets the lowest free heap of the whole
-// cycle and is the one most likely to be refused.
-constexpr uint32_t DataSettleMs = 2000;
-
 // Stream supplies a monotonic clock and nonblocking socket reads. Limit total
 // elapsed time, including slow trickles; a socket's idle timeout is insufficient.
 // `length` is the declared Content-Length, or -1 for chunked/unknown length

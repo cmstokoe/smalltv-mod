@@ -54,7 +54,6 @@ void ThemeMode::unload() {
   file_.reset();
   dataNextMs_.clear();
   dataScheduled_.clear();
-  dataFails_.clear();
   dataValues_.clear();
   dataCursor_ = 0;
   engine_.setValues({});
@@ -82,7 +81,6 @@ void ThemeMode::release(uint32_t needFree, uint32_t needLargestBlock) {
 void ThemeMode::refreshData() {
   const auto& sources = engine_.theme().data;
   if (auto result = dataRequests_.take()) {
-    const size_t index = result->index;
     if (result->success) {
       // Merge into the running set by key rather than replace it wholesale:
       // a source's fields persist across refreshes of the *other* sources, so
@@ -93,26 +91,9 @@ void ThemeMode::refreshData() {
         else existing->value = std::move(value.value);
       }
       engine_.setValues(dataValues_);
-      dataFails_[index] = 0;
-    } else if (dataFails_[index] < 255) {
-      // Only the first failure of a streak, so a source that is down does not
-      // fill the console: the ladder below already spaces out the retries.
-      // Without this line a refused fetch is invisible -- the field just shows
-      // "--", which is also what a null value or a wrong JSON path renders as.
-      if (!dataFails_[index]) {
-        Serial.printf("theme: source %u (%s) fetch failed, heap %u\n", (unsigned)index,
-                      sources[index].id.c_str(), (unsigned)ESP.getFreeHeap());
-      }
-      // A refused or failed fetch comes back on the short ladder instead of
-      // waiting out a full interval. Rescheduling a failure like a success
-      // left the fields it feeds at "--" for the whole interval -- 300 s by
-      // default -- and, with a theme cycle running on a shorter dwell, for
-      // good: the theme is unloaded before the retry falls due, and the
-      // reload clears the schedule so the next visit fails the same way.
-      ++dataFails_[index];
     }
     // Schedule from completion, preserving the interval even for slow sources.
-    dataNextMs_[index] = millis() + smalltv::dataPeriodMs(sources[index].interval, dataFails_[index]);
+    dataNextMs_[result->index] = millis() + sources[result->index].interval * 1000UL;
   }
   if (sources.empty() || dataRequests_.busy() || WiFi.status() != WL_CONNECTED) return;
   // Scan forward from `dataCursor_` for the first source that is due (an
@@ -253,19 +234,8 @@ void ThemeMode::service(const Settings& s) {
       if (!keepData_ || dataNextMs_.size() != theme.data.size()) {
         dataNextMs_.assign(theme.data.size(), 0);
         dataScheduled_.assign(theme.data.size(), false);
-        dataFails_.assign(theme.data.size(), 0);
         dataValues_.clear();
         dataCursor_ = 0;
-      }
-      // Hold every source off until the heap has settled after the parse and
-      // the repaint below. Only ever pushes an attempt later, so a source
-      // already waiting out a longer interval keeps it.
-      const uint32_t settleAt = millis() + smalltv::DataSettleMs;
-      for (size_t i = 0; i < dataNextMs_.size(); ++i) {
-        if (!dataScheduled_[i] || (int32_t)(dataNextMs_[i] - settleAt) < 0) {
-          dataNextMs_[i] = settleAt;
-          dataScheduled_[i] = true;
-        }
       }
       engine_.setTheme(std::move(theme), millis());
       engine_.setValues(dataValues_);
