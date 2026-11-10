@@ -20,6 +20,7 @@
 #include "WgClient.h"
 #if WITH_THEME
 #include "features/theme/ThemeWeb.h"
+#include "features/theme/ThemeMode.h"
 #endif
 #include "SettingsTransaction.h"
 #if WITH_HA
@@ -249,6 +250,22 @@ static void handleStatus() {
   if (radarLastOkMs())  { r.hasOk = true;    r.okAgo    = (millis() - radarLastOkMs()) / 1000; }
   r.url = radarLastUrl().c_str();
   smalltv::writeStatusRadar(out, r);
+#endif
+#if WITH_THEME
+  // Per-source fetch state for the theme on screen. A source that will not
+  // fetch shows "--" on the display, exactly like a null value or a wrong
+  // JSON path, so the device is the only place that knows which it was.
+  smalltv::writeStatusThemeData(out, g_themeMode.dataCount(), [](size_t i) {
+    const ThemeMode::DataStatus d = g_themeMode.dataStatus(i);
+    smalltv::StatusThemeSource t;
+    t.id = d.id;             // borrowed from the loaded theme; written at once
+    t.ok = d.ok;
+    t.error = d.error;
+    t.gated = d.gated;       // refused for want of heap, not tried and failed
+    t.fails = d.fails;
+    t.retryIn = d.retryIn;
+    return t;
+  });
 #endif
   smalltv::writeStatusEnd(out);
   server.sendContent("", 0);   // the last chunk

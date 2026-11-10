@@ -55,6 +55,8 @@ void ThemeMode::unload() {
   dataNextMs_.clear();
   dataScheduled_.clear();
   dataFails_.clear();
+  dataOk_.clear();
+  dataGated_.clear();
   dataValues_.clear();
   dataCursor_ = 0;
   engine_.setValues({});
@@ -94,6 +96,8 @@ void ThemeMode::refreshData() {
       }
       engine_.setValues(dataValues_);
       dataFails_[index] = 0;
+      dataOk_[index] = true;
+      dataGated_[index] = false;
       // Schedule from completion, preserving the interval even for slow sources.
       dataNextMs_[index] = millis() + sources[index].interval * 1000UL;
     } else {
@@ -103,6 +107,7 @@ void ThemeMode::refreshData() {
       // recovered at all, because the theme was unloaded before the retry fell
       // due and the reload cleared the schedule again.
       if (dataFails_[index] < 250) ++dataFails_[index];
+      dataGated_[index] = result->gated;
       dataNextMs_[index] = millis() + smalltv::dataRetryMs(sources[index].interval, dataFails_[index]);
     }
   }
@@ -114,11 +119,35 @@ void ThemeMode::refreshData() {
     size_t i = (dataCursor_ + offset) % sources.size();
     if (dataScheduled_[i] && static_cast<int32_t>(millis() - dataNextMs_[i]) < 0) continue;
     auto request = dataRequests_.start(sources[i], i);
-    if (!startThemeDataFetch(request)) request->finish(false);
+    if (!startThemeDataFetch(request)) {
+      // Refused before it left the device -- the heap gate in
+      // startThemeDataFetch(). Recorded so /api/status can say so: this and a
+      // 404 otherwise look identical from the outside.
+      request->gated = true;
+      request->finish(false);
+    }
     dataScheduled_[i] = true;
     dataCursor_ = (i + 1) % sources.size();
     break;
   }
+}
+// One source's fetch state, for /api/status. Safe to call at any time: before
+// a theme has loaded dataCount() is 0, and between a load and the first fetch
+// every source reads as "no attempt yet" (ok and error both false).
+ThemeMode::DataStatus ThemeMode::dataStatus(size_t i) const {
+  DataStatus out;
+  const auto& sources = engine_.theme().data;
+  if (i >= sources.size() || i >= dataFails_.size()) return out;
+  out.id = sources[i].id.c_str();
+  out.ok = dataOk_[i];
+  out.fails = dataFails_[i];
+  out.error = dataFails_[i] > 0;
+  out.gated = out.error && dataGated_[i];
+  if (out.error && dataScheduled_[i]) {
+    const int32_t left = static_cast<int32_t>(dataNextMs_[i] - millis());
+    out.retryIn = left > 0 ? static_cast<uint32_t>(left) / 1000 : 0;
+  }
+  return out;
 }
 String ThemeMode::activeId(const Settings& s) const {
   return (s.themeCycleSec && cycleId_.length()) ? cycleId_ : s.themeId;
@@ -246,6 +275,8 @@ void ThemeMode::service(const Settings& s) {
         dataNextMs_.assign(theme.data.size(), 0);
         dataScheduled_.assign(theme.data.size(), false);
         dataFails_.assign(theme.data.size(), 0);
+        dataOk_.assign(theme.data.size(), false);
+        dataGated_.assign(theme.data.size(), false);
         dataValues_.clear();
         dataCursor_ = 0;
       }

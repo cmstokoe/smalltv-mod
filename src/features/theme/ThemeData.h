@@ -106,6 +106,12 @@ struct DataFetch {
   size_t index;
   std::vector<ThemeValue> values;
   bool success = false;
+  // True when the attempt was refused for want of heap rather than tried and
+  // failed -- set either by the caller, when startThemeDataFetch() will not
+  // start it, or by the worker at its own gate. Like `values` it is written
+  // before finish()'s release store and read after finished()'s acquire, so
+  // it needs no synchronisation of its own.
+  bool gated = false;
   DataFetch(const ThemeDataSource& s, size_t i) : source(s), index(i) {}
   void cancel() { cancelled_.store(true); }
   bool cancelled() const { return cancelled_.load(); }

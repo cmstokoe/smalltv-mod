@@ -146,6 +146,9 @@ small.hint{display:block;color:var(--mut);margin-top:4px;font-size:12px}
    <div id="themeOrderRow" style="display:none"><label>Custom order</label>
     <div id="themeOrderList"></div>
     <small class="hint">The cycle runs top to bottom. A newly installed theme joins at the end.</small></div>
+   <div id="themeDataRow" style="display:none"><label>Live data</label>
+    <div id="themeDataBox" class="muted">-</div>
+    <small class="hint">What the device holds for the theme on screen. Green is a good fetch; red means the last attempt failed and the device is retrying on its own. "Low memory" means the attempt was refused before it was sent, so the source itself may be fine.</small></div>
    <small class="hint">Theme clocks use the timezone below. Install a package, then choose Use theme. Notifications continue to appear above it.</small>
    <small class="hint">Cycling shows every installed theme in turn. One minute is the shortest step because each change reloads the package and repaints the whole screen, and any data the theme fetches is fetched again.</small>
   </div>
@@ -858,6 +861,22 @@ function showStatus(s){
   if(t.error&&t.retryIn!=null)st+=' <span class="muted">(retry '+t.retryIn+'s)</span>';
   h+='<div class="kv"><b style="color:'+c+'">'+t.symbol+'</b><span>'+st+'</span></div>';});
  tb.innerHTML=h||'<span class="muted">No tickers configured</span>';}
+ // Theme data sources. Absent (not an empty array) means the build has no
+ // theme feature, so the row stays hidden rather than claiming no sources.
+ // Source ids are validated to ASCII letters, digits, '-' and '_' on install
+ // (validId, ThemeEngine.cpp), so they go in as-is, like ticker symbols.
+ var tdb=$('themeDataBox'),tdr=$('themeDataRow');
+ if(tdb&&tdr){
+  if(!s.themeData){tdr.style.display='none'}
+  else{tdr.style.display='';var dh='';
+   s.themeData.forEach(function(d){
+    var dc=d.error?'var(--red)':(d.ok?'var(--acc)':'var(--mut)');
+    // A source that failed may still have good values on screen from an
+    // earlier fetch, so say which of the two states it is in.
+    var ds=d.error?((d.gated?'low memory':'fetch failed')+(d.ok?', showing last good value':'')):(d.ok?'ok':'...');
+    if(d.error)ds+=' <span class="muted">(retry '+d.retryIn+'s'+(d.fails>1?', '+d.fails+' in a row':'')+')</span>';
+    dh+='<div class="kv"><b style="color:'+dc+'">'+d.id+'</b><span>'+ds+'</span></div>';});
+   tdb.innerHTML=dh||'<span class="muted">This theme fetches no data</span>';}}
 }
 function kv(k,v){return '<div class="kv"><span class="muted">'+k+'</span><b>'+v+'</b></div>'}
 // WireGuard: one line that names the failure rather than just saying "down".

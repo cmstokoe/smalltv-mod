@@ -67,6 +67,19 @@ struct StatusRadar {
   const char* url = "";         // left out when empty
 };
 
+// One theme data source (features/theme). A source that will not fetch leaves
+// its fields at "--" on screen, which looks identical to a null value or a
+// wrong JSON path, so the outcome of the last attempt is reported here the
+// same way the ticker reports a symbol's.
+struct StatusThemeSource {
+  const char* id = "";
+  bool ok = false;        // has delivered values since the theme loaded
+  bool error = false;     // the last completed attempt failed
+  bool gated = false;     // ...refused for want of heap, not tried and failed
+  uint8_t fails = 0;      // consecutive failures
+  uint32_t retryIn = 0;   // seconds to the next attempt; written when `error`
+};
+
 namespace statusout {
 // `,"key":` (the key is a PSTR literal with its comma and quotes), then the value.
 template <class Out> void member(Out& out, const char* key, const char* v) {
@@ -158,6 +171,27 @@ template <class Out> void writeStatusRadar(Out& out, const StatusRadar& r) {
   if (r.hasOk) member(out, PSTR(",\"okAgo\":"), r.okAgo);
   if (r.url[0]) member(out, PSTR(",\"url\":"), r.url);
   jsonout::raw(out, PSTR("}"));
+}
+
+// `,"themeData":[...]`, row i from rowAt(i). Written only where the theme
+// feature is built, so a build without it says nothing rather than lying with
+// an empty array.
+template <class Out, class Row> void writeStatusThemeData(Out& out, size_t count, Row&& rowAt) {
+  using statusout::member;
+  jsonout::raw(out, PSTR(",\"themeData\":["));
+  for (size_t i = 0; i < count; i++) {
+    const StatusThemeSource t = rowAt(i);
+    member(out, i ? PSTR(",{\"id\":") : PSTR("{\"id\":"), t.id);
+    member(out, PSTR(",\"ok\":"), t.ok);
+    member(out, PSTR(",\"error\":"), t.error);
+    if (t.error) {
+      member(out, PSTR(",\"gated\":"), t.gated);
+      member(out, PSTR(",\"fails\":"), t.fails);
+      member(out, PSTR(",\"retryIn\":"), t.retryIn);
+    }
+    jsonout::raw(out, PSTR("}"));
+  }
+  jsonout::raw(out, PSTR("]"));
 }
 
 // Closes the object and sends the last piece.

@@ -92,6 +92,21 @@ class ThemeMode : public DisplayMode {
   static constexpr uint32_t RequestFreeHeap = 8192;
   static constexpr uint32_t RequestLargestBlock = 3072;
   void freeForRequest() override { release(RequestFreeHeap, RequestLargestBlock); }
+
+  // Per-source fetch state for /api/status. A source that will not fetch is
+  // otherwise invisible: a field left at "--" looks the same whether the
+  // request was refused, the endpoint 404'd, or the JSON path was wrong.
+  struct DataStatus {
+    const char* id = "";
+    bool ok = false;        // has delivered values since this theme loaded
+    bool error = false;     // the last completed attempt failed
+    bool gated = false;     // ...and was refused before it left the device
+    uint8_t fails = 0;      // consecutive failures, driving the retry ladder
+    uint32_t retryIn = 0;   // seconds until the next attempt
+  };
+  size_t dataCount() const { return engine_.theme().data.size(); }
+  DataStatus dataStatus(size_t i) const;
+
  private:
   void unload();
   void refreshData();
@@ -118,6 +133,10 @@ class ThemeMode : public DisplayMode {
   // Consecutive failures per source, driving the retry ladder in
   // smalltv::dataRetryMs(). Reset by a fetch that succeeds.
   std::vector<uint8_t> dataFails_;
+  // Reported through dataStatus(). dataOk_ distinguishes "never delivered"
+  // from "delivered once and is now stale"; dataGated_ distinguishes a fetch
+  // the heap gate refused to start from one that went out and failed.
+  std::vector<bool> dataOk_, dataGated_;
   std::vector<smalltv::ThemeValue> dataValues_;
   smalltv::DataRequests dataRequests_;
   size_t dataCursor_ = 0;
