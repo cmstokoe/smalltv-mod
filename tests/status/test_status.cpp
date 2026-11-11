@@ -36,6 +36,8 @@ struct Case {
   std::vector<StatusTicker> tickers;
   bool radarCompiled;
   StatusRadar radar;
+  bool themeCompiled = false;
+  std::vector<StatusThemeSource> themeData;
 };
 
 static const char* basisOf(const StatusTicker& t) { return t.onRange ? "range" : "day"; }
@@ -100,6 +102,20 @@ static std::string reference(const Case& c) {
     if (s.hasOk) r["okAgo"] = s.okAgo;
     if (s.url[0]) r["url"] = std::string(s.url);
   }
+  if (c.themeCompiled) {
+    JsonArray arr = o["themeData"].to<JsonArray>();
+    for (const StatusThemeSource& d : c.themeData) {
+      JsonObject t = arr.add<JsonObject>();
+      t["id"] = std::string(d.id);
+      t["ok"] = d.ok;
+      t["error"] = d.error;
+      if (d.error) {
+        t["gated"] = d.gated;
+        t["fails"] = d.fails;
+        t["retryIn"] = d.retryIn;
+      }
+    }
+  }
   std::string out;
   serializeJson(doc, out);
   return out;
@@ -121,6 +137,7 @@ template <size_t Piece> static std::string streamed(const Case& c, StringSink& s
   writeStatusHead(out, c.d);
   if (c.tickersCompiled) writeStatusTickers(out, c.tickers.size(), [&](size_t i) { return c.tickers[i]; });
   if (c.radarCompiled) writeStatusRadar(out, c.radar);
+  if (c.themeCompiled) writeStatusThemeData(out, c.themeData.size(), [&](size_t i) { return c.themeData[i]; });
   writeStatusEnd(out);
   return sink.text;
 }
@@ -229,6 +246,25 @@ static std::vector<Case> cases() {
   lit.d.sun = "";
   lit.d.bl = 255;
   all.push_back(lit);
+
+  // Theme data sources: every outcome a source can be in. An id needs the
+  // same escaping as any other borrowed string.
+  Case theme("theme-data", false, false);
+  theme.themeCompiled = true;
+  StatusThemeSource live{};    live.id = "weather"; live.ok = true;
+  StatusThemeSource stale{};   stale.id = "prices"; stale.ok = true; stale.error = true;
+                               stale.fails = 2; stale.retryIn = 5;
+  StatusThemeSource refused{}; refused.id = "trains"; refused.error = true;
+                               refused.gated = true; refused.fails = 7; refused.retryIn = 10;
+  StatusThemeSource fresh{};   fresh.id = "quote \"of\" the \\ day";
+  theme.themeData = {live, stale, refused, fresh};
+  all.push_back(theme);
+
+  // Built, but no theme on screen: an empty array, not a missing key. The
+  // web UI needs to tell "no sources" from "feature not in this build".
+  Case none("theme-none", true, true);
+  none.themeCompiled = true;
+  all.push_back(none);
   return all;
 }
 

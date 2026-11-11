@@ -495,6 +495,8 @@ void Settings::setDefaults() {
 
   mode = DEFAULT_MODE;
   themeId = "";
+  themeCycleSec = DEFAULT_THEME_CYCLE_SEC;
+  themeCycleOrder = THEME_ORDER_SORTED;
   carouselSec = DEFAULT_CAROUSEL_SEC;
   carouselTicker = carouselUsage = carouselRadar = carouselHa = true;
   carouselTheme = false;   // opt in: needs an installed theme, else the slot shows an error
@@ -584,6 +586,8 @@ void settingsToJson(const Settings& s, JsonObject root, bool includeSecrets) {
 
   // Mode + shared HTTP/display
   root["themeId"] = s.themeId;
+  root["themeCycleSec"]     = s.themeCycleSec;
+  root["themeCycleOrder"]   = s.themeCycleOrder;
   root["mode"]              = (s.mode == MODE_THEME)    ? "theme"
                             : (s.mode == MODE_RADAR)    ? "radar"
                             : (s.mode == MODE_USAGE)    ? "usage"
@@ -674,6 +678,13 @@ void settingsApplyJson(Settings& s, JsonObjectConst root) {
     }
     if (valid) s.themeId = id;
   }
+  // 0 stays 0: it is "off", not a dwell to be clamped up to the minimum.
+  if (root["themeCycleSec"].is<int>()) {
+    const int sec = root["themeCycleSec"];
+    s.themeCycleSec = sec <= 0 ? 0 : constrain(sec, THEME_CYCLE_MIN_SEC, THEME_CYCLE_MAX_SEC);
+  }
+  if (root["themeCycleOrder"].is<int>())
+    s.themeCycleOrder = (uint8_t)constrain((int)root["themeCycleOrder"], THEME_ORDER_SORTED, THEME_ORDER_SHUFFLE);
   if (root["carouselSec"].is<int>())      s.carouselSec = constrain((int)root["carouselSec"], 5, 3600);
   if (root["carouselTicker"].is<bool>())  s.carouselTicker = root["carouselTicker"];
   if (root["carouselUsage"].is<bool>())   s.carouselUsage = root["carouselUsage"];

@@ -140,7 +140,17 @@ small.hint{display:block;color:var(--mut);margin-top:4px;font-size:12px}
    <label>Install a theme</label><input id="themeFile" type="file" accept=".stheme">
    <button class="btn" id="themeUploadBtn" onclick="installTheme()">Install .stheme</button>
    <small class="hint" id="themeStatus">Loading themes…</small>
+   <label>Cycle every (s, 0 = off)</label><input id="themeCycleSec" type="number" min="0" max="3600" step="60" onchange="themeCycleChanged()">
+   <label>Cycle order</label><select id="themeCycleOrder" onchange="themeCycleChanged()">
+    <option value="0">A-Z</option><option value="1">Custom</option><option value="2">Shuffle</option></select>
+   <div id="themeOrderRow" style="display:none"><label>Custom order</label>
+    <div id="themeOrderList"></div>
+    <small class="hint">The cycle runs top to bottom. A newly installed theme joins at the end.</small></div>
+   <div id="themeDataRow" style="display:none"><label>Live data</label>
+    <div id="themeDataBox" class="muted">-</div>
+    <small class="hint">What the device holds for the theme on screen. Green is a good fetch; red means the last attempt failed and the device is retrying on its own. "Low memory" means the attempt was refused before it was sent, so the source itself may be fine.</small></div>
    <small class="hint">Theme clocks use the timezone below. Install a package, then choose Use theme. Notifications continue to appear above it.</small>
+   <small class="hint">Cycling shows every installed theme in turn. One minute is the shortest step because each change reloads the package and repaints the whole screen, and any data the theme fetches is fetched again.</small>
   </div>
   <div class="card"><h2>Screen</h2>
    <label>Brightness: <span id="brVal"></span>%</label>
@@ -567,6 +577,9 @@ function loadConfig(){return j('/api/config').then(function(c){C=c;
  sv('sunRise',ck.sunRise!=null?ck.sunRise:60); sv('sunSet',ck.sunSet!=null?ck.sunSet:60); sv('sunOverlap',ck.sunOverlap||0);
  $('mode').value=c.mode||'stocks'; modeChanged();
  sv('carouselSec',c.carouselSec||30);
+ // 0 is a legal value here ("off"), so the !=null form rather than ||.
+ sv('themeCycleSec',c.themeCycleSec!=null?c.themeCycleSec:0);
+ sv('themeCycleOrder',c.themeCycleOrder!=null?c.themeCycleOrder:0); themeCycleChanged();
  sc('carouselTicker',c.carouselTicker!==false); sc('carouselUsage',c.carouselUsage!==false); sc('carouselRadar',c.carouselRadar!==false);
  sc('carouselHa',c.carouselHa!==false); sc('carouselTheme',c.carouselTheme===true);
  // HA / MQTT slice
@@ -660,6 +673,8 @@ function collect(){
   carouselSec:parseInt(gv('carouselSec'))||30,
   carouselTicker:gc('carouselTicker'), carouselUsage:gc('carouselUsage'), carouselRadar:gc('carouselRadar'),
   carouselHa:gc('carouselHa'), carouselTheme:gc('carouselTheme'),
+  themeCycleSec:parseInt(gv('themeCycleSec'))||0,
+  themeCycleOrder:parseInt(gv('themeCycleOrder'))||0,
   brightness:parseInt(gv('brightness'))||0,
   rotation:parseInt(gv('rotation')),
   autoBrightness:gc('autoBrightness'),
@@ -846,6 +861,22 @@ function showStatus(s){
   if(t.error&&t.retryIn!=null)st+=' <span class="muted">(retry '+t.retryIn+'s)</span>';
   h+='<div class="kv"><b style="color:'+c+'">'+t.symbol+'</b><span>'+st+'</span></div>';});
  tb.innerHTML=h||'<span class="muted">No tickers configured</span>';}
+ // Theme data sources. Absent (not an empty array) means the build has no
+ // theme feature, so the row stays hidden rather than claiming no sources.
+ // Source ids are validated to ASCII letters, digits, '-' and '_' on install
+ // (validId, ThemeEngine.cpp), so they go in as-is, like ticker symbols.
+ var tdb=$('themeDataBox'),tdr=$('themeDataRow');
+ if(tdb&&tdr){
+  if(!s.themeData){tdr.style.display='none'}
+  else{tdr.style.display='';var dh='';
+   s.themeData.forEach(function(d){
+    var dc=d.error?'var(--red)':(d.ok?'var(--acc)':'var(--mut)');
+    // A source that failed may still have good values on screen from an
+    // earlier fetch, so say which of the two states it is in.
+    var ds=d.error?((d.gated?'low memory':'fetch failed')+(d.ok?', showing last good value':'')):(d.ok?'ok':'...');
+    if(d.error)ds+=' <span class="muted">(retry '+d.retryIn+'s'+(d.fails>1?', '+d.fails+' in a row':'')+')</span>';
+    dh+='<div class="kv"><b style="color:'+dc+'">'+d.id+'</b><span>'+ds+'</span></div>';});
+   tdb.innerHTML=dh||'<span class="muted">This theme fetches no data</span>';}}
 }
 function kv(k,v){return '<div class="kv"><span class="muted">'+k+'</span><b>'+v+'</b></div>'}
 // WireGuard: one line that names the failure rather than just saying "down".
@@ -936,6 +967,10 @@ function themeChoiceChanged(){var select=$('themeSelect');if(!select)return;
  $('themeDetails').textContent=!theme?'No theme selected':(theme.valid===false?'Invalid package: '+(theme.error||'Could not read theme')+' — remove it and install a corrected package.':theme.name+(theme.version?' · '+theme.version:'')+' · '+Math.ceil(theme.bytes/1024)+' KiB');
 }
 function loadThemes(){return j('/api/themes').then(function(d){
+ // $ rather than gv(): this runs inside the slice tests/theme/test_webui.js
+ // evaluates on its own, where gv() is not in scope, and a lean build may have
+ // removed the control entirely.
+ var ord=$('themeCycleOrder'); if(ord&&ord.value==='1')loadThemeOrder();
  var select=$('themeSelect');if(!select)return;select.textContent='';themeEntries=d.themes||[];
  themeEntries.forEach(function(t){var o=document.createElement('option');o.value=t.id;o.textContent=t.valid===false?t.id+' — invalid package':t.name+' — '+t.version;select.appendChild(o)});
  if(d.selected)select.value=d.selected;
@@ -945,6 +980,24 @@ function loadThemes(){return j('/api/themes').then(function(d){
 function selectTheme(){var id=$('themeSelect').value;var theme=themeEntries.find(function(t){return t.id===id});
  if(!theme||theme.valid===false){toast('Choose a valid installed theme first');return}
  themeRequest('/api/themes/select',{id:id}).then(function(){C.mode='theme';C.themeId=id;sv('mode','theme');modeChanged();toast('Theme selected');loadThemes()}).catch(function(e){toast(e.message)})}
+// The custom order is only worth showing when it is the one in use.
+function themeCycleChanged(){var row=$('themeOrderRow');if(!row)return;
+ var custom=gv('themeCycleOrder')==='1';row.style.display=custom?'block':'none';
+ if(custom)loadThemeOrder();}
+function loadThemeOrder(){var list=$('themeOrderList');if(!list)return;
+ return j('/api/themes/order').then(function(d){var ids=d.order||[];list.textContent='';
+  if(!ids.length){var e=document.createElement('small');e.className='hint';e.textContent='No themes installed';list.appendChild(e);return}
+  ids.forEach(function(id,i){
+   var row=document.createElement('div');row.className='chk';
+   var up=document.createElement('button');up.className='btn';up.textContent='\u25b2';up.disabled=i===0;
+   up.onclick=function(){moveTheme(id,'up')};
+   var down=document.createElement('button');down.className='btn';down.textContent='\u25bc';down.disabled=i===ids.length-1;
+   down.onclick=function(){moveTheme(id,'down')};
+   var name=document.createElement('label');name.textContent=(i+1)+'. '+id;
+   row.appendChild(up);row.appendChild(down);row.appendChild(name);list.appendChild(row)})})
+ .catch(function(e){toast(e.message)})}
+function moveTheme(id,dir){themeRequest('/api/themes/order',{id:id,dir:dir})
+ .then(function(){return loadThemeOrder()}).catch(function(e){toast(e.message)})}
 function deleteTheme(){var id=$('themeSelect').value;if(!id)return;
  themeRequest('/api/themes/delete',{id:id}).then(function(){toast('Theme removed');loadThemes()}).catch(function(e){toast(e.message)})}
 function installTheme(){var f=$('themeFile').files[0];if(!f){toast('Choose a .stheme package');return}

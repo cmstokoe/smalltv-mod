@@ -22,6 +22,36 @@ class ThemeFile : public smalltv::Source {
  private:
   File file_;
 };
+// Hands every installed theme's id to `fn`. Reads directory entries only:
+// openNextFile() opens every file it walks, and on the ESP8266 this runs
+// beside a loaded theme, where the heap is shortest (same reason as
+// installedCount() in ThemeWeb.cpp). A lap of the directory is input-sized, so
+// it yields per entry (CONTRIBUTING).
+template <class Fn>
+void eachInstalledTheme(Fn fn) {
+#if defined(SMALLTV_ESP8266)
+  Dir dir = LittleFS.openDir("/themes");
+  while (dir.next()) {
+    if (!dir.isFile()) continue;
+    String name = dir.fileName();
+    if (!name.endsWith(".stheme")) continue;
+    fn(name.substring(0, name.length() - 7));
+    yield();
+  }
+#else
+  File dir = LittleFS.open("/themes", "r");
+  for (File f = dir.openNextFile(); f; f = dir.openNextFile()) {
+    if (f.isDirectory()) continue;
+    String name = f.name();
+    const int slash = name.lastIndexOf('/');
+    if (slash >= 0) name = name.substring(slash + 1);
+    if (!name.endsWith(".stheme")) continue;
+    fn(name.substring(0, name.length() - 7));
+    yield();
+  }
+  dir.close();
+#endif
+}
 class ThemeMode : public DisplayMode {
  public:
   const char* id() const override { return "theme"; }
@@ -32,6 +62,12 @@ class ThemeMode : public DisplayMode {
   void wake(const Settings&) override {
     engine_.invalidate();
     messageDrawn_ = false;
+    // Drop the tick origin rather than the elapsed total: the dwell counts
+    // time this theme was actually on screen, so the stretch spent away (a
+    // carousel slot elsewhere, a notification overlay, the info screen)
+    // is not credited to it. Resetting the total instead would mean a theme
+    // never advanced whenever carouselSec was shorter than the dwell.
+    lastTickMs_ = 0;
   }
   const String& error() const { return error_; }
   // What parsing a package needs: its peak heap (tests/theme/test_memory.cpp
@@ -56,21 +92,67 @@ class ThemeMode : public DisplayMode {
   static constexpr uint32_t RequestFreeHeap = 8192;
   static constexpr uint32_t RequestLargestBlock = 3072;
   void freeForRequest() override { release(RequestFreeHeap, RequestLargestBlock); }
+
+  // Per-source fetch state for /api/status. A source that will not fetch is
+  // otherwise invisible: a field left at "--" looks the same whether the
+  // request was refused, the endpoint 404'd, or the JSON path was wrong.
+  struct DataStatus {
+    const char* id = "";
+    bool ok = false;        // has delivered values since this theme loaded
+    bool error = false;     // the last completed attempt failed
+    bool gated = false;     // ...and was refused before it left the device
+    uint8_t fails = 0;      // consecutive failures, driving the retry ladder
+    uint32_t retryIn = 0;   // seconds until the next attempt
+  };
+  size_t dataCount() const { return engine_.theme().data.size(); }
+  DataStatus dataStatus(size_t i) const;
+
  private:
   void unload();
   void refreshData();
+  // The theme that should be on screen: the cycle's entry while cycling, else
+  // the user's pinned selection. themeId is never written by the cycle.
+  String activeId(const Settings& s) const;
+  // Accrues on-screen time and advances when the dwell is up.
+  void serviceCycle(const Settings& s);
+  // Picks the next theme. False when there is nothing to move to (nothing
+  // installed, or only the one already showing).
+  bool advanceCycle(const Settings& s);
+
+  // A package that will not load is skipped, so one bad theme does not park
+  // the cycle on an error screen. Bounded at a full lap's worth, after which
+  // the error is reported the usual way rather than spinning silently.
+  static constexpr uint8_t MaxCycleSkips = 16;
+
   smalltv::Engine engine_;
   std::unique_ptr<ThemeFile> file_;
   std::unique_ptr<smalltv::Package> package_;
   String loadedId_, error_;
   std::vector<uint32_t> dataNextMs_;
   std::vector<bool> dataScheduled_;
+  // Consecutive failures per source, driving the retry ladder in
+  // smalltv::dataRetryMs(). Reset by a fetch that succeeds.
+  std::vector<uint8_t> dataFails_;
+  // Reported through dataStatus(). dataOk_ distinguishes "never delivered"
+  // from "delivered once and is now stale"; dataGated_ distinguishes a fetch
+  // the heap gate refused to start from one that went out and failed.
+  std::vector<bool> dataOk_, dataGated_;
   std::vector<smalltv::ThemeValue> dataValues_;
   smalltv::DataRequests dataRequests_;
   size_t dataCursor_ = 0;
   // Set by release(): the next load of the same theme keeps the data state.
   bool keepData_ = false;
   bool attempted_ = false, messageDrawn_ = false;
+
+  // --- Cycling. All RAM only: persisting the current entry would rewrite the
+  // whole settings document every dwell (~2.4 KB serialize, temp file, rename,
+  // and ~7 KB of transient heap), on the same partition as the packages. ---
+  String cycleId_;              // entry on screen; empty => fall back to themeId
+  String pinnedId_;             // last themeId seen, to spot a new selection
+  uint32_t cycleElapsedMs_ = 0; // on-screen time accrued toward the dwell
+  uint32_t lastTickMs_ = 0;     // previous service() millis(); 0 = just arrived
+  uint32_t lapSeed_ = 0;        // shuffle permutation; rerolled each lap
+  uint8_t cycleSkips_ = 0;      // consecutive unloadable packages this lap
 };
 extern ThemeMode g_themeMode;
 #endif

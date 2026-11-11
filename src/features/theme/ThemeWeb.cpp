@@ -2,6 +2,8 @@
 #if WITH_THEME
 #include "ThemeMode.h"
 #include "ThemeCatalog.h"
+#include "ThemeCycle.h"
+#include "ThemeOrder.h"
 #include "Clock.h"
 #include <ArduinoJson.h>
 #include <algorithm>
@@ -82,6 +84,72 @@ void updateIndex(const String& id, const smalltv::InstalledTheme* added) {
     written = to && smalltv::copyThemeIndex(from, sink, id.c_str(), added);
   }
   publishIndex(written);
+}
+// The mandated cycle order (ThemeOrder.h): one id per line, the sequence the
+// user arranged with the up/down buttons. Same `.new`-then-rename dance as the
+// index, so a half-written order is never visible, and maintained on the same
+// two events so the file is always complete and the reader needs no repair
+// logic.
+const char* orderPath = "/themes/.order";
+const char* orderNext = "/themes/.order.new";
+void publishOrder(bool written) {
+  LittleFS.remove(orderPath);
+  if (!written || !LittleFS.rename(orderNext, orderPath)) LittleFS.remove(orderNext);
+  forgetFreeBytes();
+}
+// After an install or a delete: the order without `remove`, plus `add` at the
+// end. A new theme joins at the back of the sequence rather than jumping into
+// the middle of one the user arranged.
+void updateOrder(const String& remove, const String& add) {
+  bool written;
+  {
+    ThemeFile from;
+    from.open(orderPath);   // none yet: copies nothing, so `add` seeds the file
+    File to = LittleFS.open(orderNext, "w");
+    FileSink sink(to);
+    written = to && smalltv::copyThemeOrder(from, sink, remove.c_str(), add.c_str());
+  }
+  publishOrder(written);
+}
+// Writes every installed id in sorted order. Used when the first reorder
+// arrives and no order file exists yet: the buttons then move entries of a
+// sequence that matches what the A-Z cycle was already showing.
+//
+// Sorted without holding a list, by walking the directory once per entry
+// (CycleCursor keeps two candidates, see ThemeCycle.h). That is O(n^2)
+// directory reads for n <= MaxThemes, on a path a user hits by hand.
+bool seedOrder(smalltv::Sink& to) {
+  std::string previous;
+  for (unsigned written = 0; written < MaxThemes; ++written) {
+    smalltv::CycleCursor cursor(smalltv::CycleSorted, 0, previous);
+    eachInstalledTheme([&cursor](const String& id) { cursor.offer(std::string(id.c_str())); });
+    if (cursor.empty() || (written && cursor.wrapped())) break;
+    previous = cursor.chosen();
+    if (!to.write(previous.data(), previous.size()) || !to.write("\n", 1)) return false;
+  }
+  return true;
+}
+// Moves one id one place along the order, seeding the file first if the user
+// has never arranged one.
+void reorderTheme(const String& id, bool up) {
+  if (!LittleFS.exists(orderPath)) {
+    bool seeded;
+    {
+      File to = LittleFS.open(orderNext, "w");
+      FileSink sink(to);
+      seeded = to && seedOrder(sink);
+    }
+    publishOrder(seeded);
+  }
+  bool written;
+  {
+    ThemeFile from;
+    from.open(orderPath);
+    File to = LittleFS.open(orderNext, "w");
+    FileSink sink(to);
+    written = to && smalltv::moveThemeOrder(from, sink, id.c_str(), up);
+  }
+  publishOrder(written);
 }
 // Firmware 3.1.0 and 3.1.1 kept one `<id>.meta` file per theme, each in an
 // 8 KB block of storage; the index replaces them. Removed at boot, a few
@@ -255,6 +323,7 @@ void finishUpload() {
   entry.bytes = uploaded;
   entry.valid = true;
   updateIndex(theme.id.c_str(), &entry);
+  updateOrder("", theme.id.c_str());
   reply(201, theme.id.c_str());
   resetUpload();
 }
@@ -506,6 +575,82 @@ void deleteTheme() {
     return;
   }
   updateIndex(id, nullptr);
+  updateOrder(id, "");
+  reply(200, id);
+}
+// GET /api/themes/order: the mandated sequence, so the UI can show what it is
+// moving. Ids only -- unlike the full listing this is a handful of short
+// strings, well under the payload the listing has to stream.
+//
+// With no order file yet, replies with the sorted sequence the A-Z cycle would
+// use, so the list is never blank before the first move.
+void listOrder() {
+  if (!auth()) return;
+  JsonDocument doc;
+  JsonArray order = doc["order"].to<JsonArray>();
+  ThemeFile file;
+  if (LittleFS.exists(orderPath) && file.open(orderPath)) {
+    smalltv::OrderLines lines(file);
+    std::string line;
+    while (lines.next(line) && order.size() < MaxThemes) {
+      // A stale entry for a theme since removed is dropped rather than shown:
+      // the maintenance pass will drop it from the file at the next install
+      // or delete anyway.
+      if (line.empty()) continue;
+      if (!LittleFS.exists(String("/themes/") + line.c_str() + ".stheme")) continue;
+      order.add(line);
+    }
+  } else {
+    std::string previous;
+    for (unsigned n = 0; n < MaxThemes; ++n) {
+      smalltv::CycleCursor cursor(smalltv::CycleSorted, 0, previous);
+      eachInstalledTheme([&cursor](const String& id) { cursor.offer(std::string(id.c_str())); });
+      if (cursor.empty() || (n && cursor.wrapped())) break;
+      previous = cursor.chosen();
+      order.add(previous);
+    }
+  }
+  String json;
+  serializeJson(doc, json);
+  server->send(200, "application/json", json);
+}
+// POST /api/themes/order: moves one theme one place in the mandated order.
+// One move rather than the whole sequence, so the body stays small: shipping
+// 16 ids of up to 48 chars would be ~800 B into a chip that has to free the
+// running theme to serve a request at all.
+void orderTheme() {
+  if (!auth()) return;
+  if (!server->hasArg("plain") || server->arg("plain").length() > 128) {
+    reply(400, "Expected JSON with id and dir");
+    return;
+  }
+  String id;
+  bool up = false;
+  {
+    JsonDocument doc;
+    if (deserializeJson(doc, server->arg("plain")) || !doc["id"].is<const char*>() ||
+        !doc["dir"].is<const char*>()) {
+      reply(400, "Expected JSON with id and dir");
+      return;
+    }
+    id = doc["id"].as<String>();
+    const String dir = doc["dir"].as<String>();
+    if (dir == "up") up = true;
+    else if (dir != "down") {
+      reply(400, "Expected dir up or down");
+      return;
+    }
+  }
+  // Same embedded-NUL check as requestId().
+  if (!smalltv::validId(id.c_str()) || id.length() != strlen(id.c_str())) {
+    reply(400, "Invalid theme ID");
+    return;
+  }
+  if (!LittleFS.exists("/themes/" + id + ".stheme")) {
+    reply(404, "Theme not found");
+    return;
+  }
+  reorderTheme(id, up);
   reply(200, id);
 }
 }
@@ -523,6 +668,8 @@ void themeWebBegin(WebServerClass& web, Settings& s, bool (*requireAuth)(), bool
   web.on("/api/themes/install", HTTP_POST, finishUpload, receiveUpload);
   web.on("/api/themes/select", HTTP_POST, selectTheme);
   web.on("/api/themes/delete", HTTP_POST, deleteTheme);
+  web.on("/api/themes/order", HTTP_GET, listOrder);
+  web.on("/api/themes/order", HTTP_POST, orderTheme);
   removeSidecars();
 #if defined(SMALLTV_ESP8266)
   // The web server reserves its 2 KB upload buffer before the first call to

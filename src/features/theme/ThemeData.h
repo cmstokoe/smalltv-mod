@@ -8,6 +8,53 @@ namespace smalltv {
 constexpr size_t MaxDataBody = 2048;
 constexpr uint32_t DataTimeoutMs = 3000;
 
+// How long until a source is fetched again. A good fetch waits its declared
+// interval; a failed one comes back on a short, doubling backoff instead.
+// Without this, one refused fetch costs a source its whole interval -- 300 s
+// by default -- and the fields it feeds sit at "--" until then. The common
+// refusal is transient and clears in seconds: both fetch paths give up when
+// the heap is momentarily too low (ThemeDataClient.cpp wants 18000 B free,
+// and 8192 B more for the task's stack off the ESP8266), and the moment that
+// is most likely is the tick a theme is loaded in, just after the package
+// parse has peaked the heap.
+//
+// Same shape and cap as the ticker's ladder (symbolPeriodMs in
+// ticker/StockClient.cpp): once the ladder is spent a source settles into its
+// normal cadence and keeps retrying there, so a genuinely dead endpoint is
+// never given up on. The cap is a floor on frequency -- a failure never makes
+// a source wait longer than its own interval -- so a source polled faster than
+// a ladder step simply keeps its own cadence.
+// The first retry is quick, because the overwhelmingly common failure is the
+// heap dip around a load and it has usually passed by the time the repaint
+// finishes. It then backs off, but only as far as DataRetryCapMs: a step
+// longer than that is no use here, because the cycle's dwell floor is 60 s
+// (THEME_CYCLE_MIN_SEC) and a theme is unloaded when it ends. A ladder that
+// backed off to 40 s left the last stretch of every dwell with no attempt in
+// it at all, so a source that recovered during that stretch stayed at "--"
+// until the theme came round again.
+//
+// The ladder therefore spans a dwell rather than growing without bound: 2 s,
+// 5, then 10 s apart up to DataRetryMax attempts, 57 s of trying in all.
+// After that the source settles into its declared interval and keeps retrying
+// there -- the shape ticker/StockClient.cpp uses, and the reason a genuinely
+// dead endpoint is never given up on but is never polled hard either.
+constexpr uint32_t DataRetryMs = 2000;      // first retry after a failure
+constexpr uint32_t DataRetryStepMs = 5000;  // second retry; doubles from there
+constexpr uint32_t DataRetryCapMs = 10000;  // but never backs off past this
+constexpr uint8_t DataRetryMax = 7;         // ladder: 2 s, 5, then 10 x5
+
+inline uint32_t dataRetryMs(uint32_t intervalSec, uint8_t fails) {
+  const uint32_t interval = intervalSec * 1000UL;
+  if (!fails || fails > DataRetryMax) return interval;   // ladder spent -> normal cadence
+  uint32_t back = DataRetryMs;
+  if (fails > 1) {
+    back = DataRetryStepMs;
+    for (uint8_t i = 2; i < fails; ++i) back <<= 1;
+    if (back > DataRetryCapMs) back = DataRetryCapMs;
+  }
+  return back < interval ? back : interval;              // never slower than a good fetch
+}
+
 // Stream supplies a monotonic clock and nonblocking socket reads. Limit total
 // elapsed time, including slow trickles; a socket's idle timeout is insufficient.
 // `length` is the declared Content-Length, or -1 for chunked/unknown length
@@ -59,6 +106,12 @@ struct DataFetch {
   size_t index;
   std::vector<ThemeValue> values;
   bool success = false;
+  // True when the attempt was refused for want of heap rather than tried and
+  // failed -- set either by the caller, when startThemeDataFetch() will not
+  // start it, or by the worker at its own gate. Like `values` it is written
+  // before finish()'s release store and read after finished()'s acquire, so
+  // it needs no synchronisation of its own.
+  bool gated = false;
   DataFetch(const ThemeDataSource& s, size_t i) : source(s), index(i) {}
   void cancel() { cancelled_.store(true); }
   bool cancelled() const { return cancelled_.load(); }

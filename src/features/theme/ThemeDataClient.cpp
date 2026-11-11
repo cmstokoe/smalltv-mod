@@ -106,7 +106,10 @@ bool fetchThemeSource(smalltv::DataFetch& request) {
   Deadline deadline(request);
   std::unique_ptr<NetClient> client;
   if (request.source.url.rfind("https://", 0) == 0) {
-    if (ESP.getFreeHeap() < 18000) return false;
+    if (ESP.getFreeHeap() < 18000) {
+      request.gated = true;   // refused at the TLS gate, not a failed request
+      return false;
+    }
     auto secure = new(std::nothrow) BoundedClient<SecureClient>(deadline);
     if (!secure) return false;
     // HTTPS reaches this path only after the manifest explicitly opted in.
