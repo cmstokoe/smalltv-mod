@@ -14,6 +14,13 @@
 // ---------------------------------------------------------------------------
 #define FW_NAME     "smalltv-mod"
 #define FW_VERSION  "3.4.0"
+// The name on the boot splash (Gfx.cpp's gfxBoot, 3x text). At GFX_FONT_W
+// that is 18 px a character, so it has to stay within 13 characters to fit
+// TFT_WIDTH; longer and gfxDrawCentered pins it to x=0 and it runs off the
+// right. This is display only -- FW_NAME above is the identity the web UI,
+// /api/status and the self-update asset names use, and changing that would
+// break the update check.
+#define BOOT_NAME   "RipjarTV"
 
 // Project / update references (shown in the web UI; used by the GitHub self-update)
 #define REPO_URL      "https://github.com/giovi321/smalltv-mod"
