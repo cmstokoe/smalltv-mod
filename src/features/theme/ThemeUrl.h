@@ -42,9 +42,31 @@ inline bool validThemeBase(const char* base) {
   return s[host] != '/' && s[host] != '?' && s[host] != '#';
 }
 
+// Offset just past the "{base}" placeholder, or npos when the url does not use
+// it.
+//
+// Three spellings are accepted: "{base}/x", "http://{base}/x" and
+// "https://{base}/x". The bare form is the honest one, but SmallTV Studio --
+// the browser editor most themes are authored in -- validates this field with
+// /^https?:\/\/[^\/?#]/ (src/core/core.ts) and would refuse to export a package
+// containing it. The two scheme-prefixed spellings satisfy that regex while
+// meaning exactly the same thing here.
+//
+// The scheme written before the placeholder is DISCARDED: the whole origin,
+// scheme included, comes from the device's base. That keeps one meaning for
+// "{base}" rather than two, and it is what lets a server move between http and
+// https without any theme being repacked -- the point of the feature.
+inline size_t themeBaseEnd(const std::string& url) {
+  size_t at = 0;
+  if (url.compare(0, 7, "http://") == 0) at = 7;
+  else if (url.compare(0, 8, "https://") == 0) at = 8;
+  if (url.compare(at, ThemeBaseTokenLen, ThemeBaseToken) != 0) return std::string::npos;
+  return at + ThemeBaseTokenLen;
+}
+
 // True when a manifest url defers its origin to the device's base.
 inline bool usesThemeBase(const std::string& url) {
-  return url.compare(0, ThemeBaseTokenLen, ThemeBaseToken) == 0;
+  return themeBaseEnd(url) != std::string::npos;
 }
 
 // Joins a theme's url to the device's base, or returns it untouched when it
@@ -57,8 +79,9 @@ inline bool usesThemeBase(const std::string& url) {
 // the source is then reported through the ordinary failure path rather than
 // silently never being tried.
 inline std::string expandThemeUrl(const std::string& url, const std::string& base) {
-  if (!usesThemeBase(url)) return url;
-  return base + url.substr(ThemeBaseTokenLen);
+  const size_t end = themeBaseEnd(url);
+  if (end == std::string::npos) return url;
+  return base + url.substr(end);
 }
 
 }

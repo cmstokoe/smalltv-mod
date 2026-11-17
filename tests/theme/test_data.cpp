@@ -167,6 +167,18 @@ int main() {
   assert(expandThemeUrl("{bas}/x","http://other.net")=="{bas}/x");
   // The join itself.
   assert(expandThemeUrl("{base}/release.json","http://dashboard.example.net")=="http://dashboard.example.net/release.json");
+  // The two scheme-prefixed spellings mean the same thing: SmallTV Studio
+  // validates this field with /^https?:\/\/[^\/?#]/ and would not export the
+  // bare form. The scheme written there is discarded -- the origin, scheme
+  // included, comes from the base.
+  assert(expandThemeUrl("http://{base}/release.json","http://dashboard.example.net")=="http://dashboard.example.net/release.json");
+  assert(expandThemeUrl("https://{base}/release.json","http://dashboard.example.net")=="http://dashboard.example.net/release.json");
+  assert(expandThemeUrl("http://{base}/release.json","https://dashboard.example.net")=="https://dashboard.example.net/release.json");
+  assert(expandThemeUrl("https://{base}","http://dashboard.example.net/CA")=="http://dashboard.example.net/CA");
+  // A scheme with no placeholder after it is an ordinary url, untouched.
+  assert(expandThemeUrl("http://{other}/x","http://dashboard.example.net")=="http://{other}/x");
+  assert(usesThemeBase("http://{base}/x") && usesThemeBase("https://{base}") && usesThemeBase("{base}"));
+  assert(!usesThemeBase("http://example.net/{base}") && !usesThemeBase("ftp://{base}/x"));
   assert(expandThemeUrl("{base}?q=1","http://dashboard.example.net")=="http://dashboard.example.net?q=1");
   assert(expandThemeUrl("{base}","http://dashboard.example.net")=="http://dashboard.example.net");
   // A base carrying a path, which is how a per-device value is expressed now

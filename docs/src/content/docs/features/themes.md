@@ -291,12 +291,21 @@ affect notifications or other display modes.
 A package normally hardcodes the address it fetches from, so the same theme
 cannot follow a server between a LAN address, a staging host and a public name
 without being edited and repacked. Instead of a full URL, a `"spec": 2` source
-may start its `url` with `{base}`:
+may put `{base}` where the server's address would go:
 
 ```json
-{"id": "release", "url": "{base}/release.json", "interval": 300, "insecureTls": true,
+{"id": "release", "url": "https://{base}/release.json", "interval": 300, "insecureTls": true,
  "fields": [{"id": "version", "path": "version"}]}
 ```
+
+Write it as `https://{base}/...` if you author in SmallTV Studio: the editor
+checks this field against `/^https?:\/\/[^\/?#]/` and will not export a bare
+`{base}/...`, and seeing `https:` makes it tick `insecureTls` for you, which a
+`{base}` source needs. `http://{base}/...` and the bare `{base}/...` mean
+exactly the same thing. **The scheme you write before `{base}` is discarded** —
+the whole address, scheme included, comes from the device's setting, which is
+what lets a server move between `http` and `https` without any theme being
+repacked.
 
 The device puts its **Theme data base URL** (Display tab, under the theme
 controls) in place of `{base}`. With that set to `http://dashboard.example.net`,
@@ -307,15 +316,17 @@ the theme does not know about; a trailing slash is ignored either way.
 
 Three rules keep this predictable:
 
-- `{base}` works only at the very start of a `url`, followed by nothing, `/`
-  or `?`. Any other `{...}` in a URL is rejected when the package is installed,
+- `{base}` works only at the start of a `url` — on its own or straight after
+  `http://` or `https://` — and must be followed by nothing, `/` or `?`. Any
+  other `{...}` in a URL is rejected when the package is installed,
   so a typo such as `{bse}` fails where you can see it rather than being sent
   to the server as text.
 - It needs `"spec": 2`, like the other capabilities added after spec 1.
-- It needs `"insecureTls": true`, even though the URL names no scheme. The base
-  may well be an `https://` address, and the device cannot tell at install time;
-  requiring the acknowledgement up front is what stops an HTTPS base from
-  quietly bypassing the check below.
+- It needs `"insecureTls": true`, whatever scheme is written before it, because
+  the real scheme comes from the setting and the device cannot know it at
+  install time. Requiring the acknowledgement up front is what stops an HTTPS
+  base from quietly bypassing the check below. Authoring the URL as
+  `https://{base}/...` gets this ticked automatically in SmallTV Studio.
 
 With no base set, such a source has no address to fetch and reports a failed
 fetch in **Live data** rather than silently doing nothing.

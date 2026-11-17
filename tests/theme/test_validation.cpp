@@ -101,6 +101,19 @@ int main() {
   deserializeJson(d,dataBase);d["spec"]=2;d["data"][0]["url"]="{base}/release.json";d["data"][0]["insecureTls"]=true;
   serializeJson(d,json);assert(parseTheme(json,theme,error));
   assert(theme.data[0].url=="{base}/release.json");   // stored verbatim; joined at fetch
+  // The spellings SmallTV Studio can export: its validator requires
+  // /^https?:\/\/[^\/?#]/, so the bare form never leaves the editor.
+  deserializeJson(d,dataBase);d["spec"]=2;d["data"][0]["url"]="http://{base}/release.json";d["data"][0]["insecureTls"]=true;
+  serializeJson(d,json);assert(parseTheme(json,theme,error));
+  assert(theme.data[0].url=="http://{base}/release.json");
+  deserializeJson(d,dataBase);d["spec"]=2;d["data"][0]["url"]="https://{base}/release.json";d["data"][0]["insecureTls"]=true;
+  serializeJson(d,json);assert(parseTheme(json,theme,error));
+  // Still only a prefix: a scheme that is not http/https does not carry it.
+  deserializeJson(d,dataBase);d["spec"]=2;d["data"][0]["url"]="ftp://{base}/release.json";d["data"][0]["insecureTls"]=true;
+  serializeJson(d,json);assert(!parseTheme(json,theme,error));
+  // And the "followed by / or ?" rule applies past the scheme too.
+  deserializeJson(d,dataBase);d["spec"]=2;d["data"][0]["url"]="http://{base}release.json";d["data"][0]["insecureTls"]=true;
+  serializeJson(d,json);assert(!parseTheme(json,theme,error));
   deserializeJson(d,dataBase);d["spec"]=2;d["data"][0]["url"]="{base}?q=1";d["data"][0]["insecureTls"]=true;
   serializeJson(d,json);assert(parseTheme(json,theme,error));
   deserializeJson(d,dataBase);d["spec"]=2;d["data"][0]["url"]="{base}";d["data"][0]["insecureTls"]=true;

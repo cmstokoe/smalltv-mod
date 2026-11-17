@@ -147,7 +147,7 @@ small.hint{display:block;color:var(--mut);margin-top:4px;font-size:12px}
     <div id="themeOrderList"></div>
     <small class="hint">The cycle runs top to bottom. A newly installed theme joins at the end.</small></div>
    <label>Theme data base URL</label><input id="themeBase" type="url" placeholder="http://dashboard.example.net">
-   <small class="hint">A theme's data source can start its URL with <code>{base}</code> and the device puts this address there, so one package follows a server between addresses without being repacked. Leave it blank unless a theme asks for it.</small>
+   <small class="hint">A theme's data source can write <code>{base}</code> where the server address goes (<code>https://{base}/data.json</code>) and the device puts this address there, so one package follows a server between addresses without being repacked. Leave it blank unless a theme asks for it.</small>
    <div id="themeDataRow" style="display:none"><label>Live data</label>
     <div id="themeDataBox" class="muted">-</div>
     <small class="hint">What the device holds for the theme on screen. Green is a good fetch; red means the last attempt failed and the device is retrying on its own. "Low memory" means the attempt was refused before it was sent, so the source itself may be fine.</small></div>
