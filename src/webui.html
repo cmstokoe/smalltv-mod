@@ -756,7 +756,14 @@ function collect(){
  var tbase=$('themeBase'); if(tbase)o.themeBase=tbase.value;
  return o;
 }
-function saveAll(){j('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(collect())})
+function saveAll(){
+ // The device refuses a base URL with no scheme and keeps the one it had, so
+ // without this the page would report "Saved" and the theme would quietly go
+ // on failing. Same shape as the firmware's check (ThemeUrl.h) and SmallTV
+ // Studio's, so all three agree on what a base URL looks like.
+ var tb=$('themeBase');
+ if(tb&&tb.value&&!/^https?:\/\/[^\/?#]/.test(tb.value)){toast('Theme data base URL needs http:// or https://');tb.focus();return}
+ j('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(collect())})
  .then(function(r){if(!r.ok){toast(r.error||'Save failed');return}toast(r.reboot?'Saved — rebooting...':'Saved');if(r.reboot)setTimeout(function(){location.reload()},6000);loadStatus()})
  .catch(function(e){toast('Save failed: '+e.message)})}
 

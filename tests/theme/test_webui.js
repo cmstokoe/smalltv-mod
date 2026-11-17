@@ -35,13 +35,26 @@ vm.createContext(context);vm.runInContext(code,context);
  // A save the device refuses (or never answers) must say so: the Save
  // buttons used to show nothing when the request failed.
  const saveCode=html.slice(html.indexOf('function saveAll('),html.indexOf('// wifi networks'));
- let saveToast='';
- const saveContext={j:async()=>{throw new Error('not enough memory')},collect:()=>({}),collectWifi:()=>[],
-  toast:message=>saveToast=message,loadStatus:()=>{},setTimeout,JSON};
+ let saveToast='',posted=0;
+ const saveNodes={themeBase:{value:'',focus(){}}};
+ const saveContext={j:async()=>{posted++;throw new Error('not enough memory')},collect:()=>({}),collectWifi:()=>[],
+  toast:message=>saveToast=message,loadStatus:()=>{},setTimeout,JSON,$:id=>saveNodes[id]};
  vm.createContext(saveContext);vm.runInContext(saveCode,saveContext);
  for(const save of ['saveAll','saveWifi']){
   saveToast='';saveContext[save]();await new Promise(resolve=>setImmediate(resolve));
   assert.equal(saveToast,'Save failed: not enough memory',save);
+ }
+ // The device refuses a theme base URL with no scheme and keeps the one it
+ // had, so the page has to stop the save and say why rather than reporting a
+ // save that did not happen.
+ saveNodes.themeBase.value='dashboard.dunelm.net/ca/';
+ saveToast='';posted=0;saveContext.saveAll();await new Promise(resolve=>setImmediate(resolve));
+ assert.match(saveToast,/needs http:\/\/ or https:\/\//);
+ assert.equal(posted,0,'nothing is sent when the base URL has no scheme');
+ for(const good of ['http://dashboard.dunelm.net/ca/','https://dashboard.dunelm.net','']){
+  saveNodes.themeBase.value=good;
+  saveToast='';posted=0;saveContext.saveAll();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(posted,1,'sent for '+JSON.stringify(good));
  }
  console.log('theme web UI tests passed');
 })().catch(error=>{console.error(error);process.exitCode=1});
