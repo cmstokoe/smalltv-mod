@@ -4,6 +4,7 @@
 #include "Mode.h"
 #include "ThemePackage.h"
 #include "ThemeData.h"
+#include "ThemeUrl.h"
 #include <LittleFS.h>
 #include <memory>
 #include <vector>
@@ -109,7 +110,7 @@ class ThemeMode : public DisplayMode {
 
  private:
   void unload();
-  void refreshData();
+  void refreshData(const Settings& s);
   // The theme that should be on screen: the cycle's entry while cycling, else
   // the user's pinned selection. themeId is never written by the cycle.
   String activeId(const Settings& s) const;

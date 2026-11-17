@@ -216,6 +216,9 @@ struct Settings {
 
   // --- Active feature ---
   String themeId;       // installed .stheme ID; empty until selected
+  // Origin for a data source whose url starts with "{base}" (ThemeUrl.h), so
+  // one package can follow a server between addresses. Empty = feature off.
+  String themeBase;
   // Theme cycling. themeId stays the pinned selection and the cycle's starting
   // point; the entry actually on screen lives in RAM only (ThemeMode), because
   // persisting it would rewrite the whole settings document every dwell.

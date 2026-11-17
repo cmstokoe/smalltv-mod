@@ -81,7 +81,7 @@ void ThemeMode::release(uint32_t needFree, uint32_t needLargestBlock) {
 // Collects a finished fetch (if any) and, with at most one request in flight
 // at a time, starts the next source whose interval has elapsed, round-robin
 // over sources so no single slow/failing one starves the others.
-void ThemeMode::refreshData() {
+void ThemeMode::refreshData(const Settings& s) {
   const auto& sources = engine_.theme().data;
   if (auto result = dataRequests_.take()) {
     const size_t index = result->index;
@@ -119,6 +119,11 @@ void ThemeMode::refreshData() {
     size_t i = (dataCursor_ + offset) % sources.size();
     if (dataScheduled_[i] && static_cast<int32_t>(millis() - dataNextMs_[i]) < 0) continue;
     auto request = dataRequests_.start(sources[i], i);
+    // Resolve "{base}" against the device's setting. DataFetch holds its own
+    // copy of the source, so this leaves the parsed theme untouched for the
+    // next fetch and costs nothing beyond the copy already being made. A url
+    // without the placeholder comes back unchanged.
+    request->source.url = smalltv::expandThemeUrl(sources[i].url, s.themeBase.c_str());
     if (!startThemeDataFetch(request)) {
       // Refused before it left the device -- the heap gate in
       // startThemeDataFetch(). Recorded so /api/status can say so: this and a
@@ -307,7 +312,7 @@ void ThemeMode::service(const Settings& s) {
     }
     return;
   }
-  refreshData();
+  refreshData(s);
   tm t{};
   bool valid = clockNow(t);
   Panel panel;

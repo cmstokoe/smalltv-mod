@@ -146,6 +146,8 @@ small.hint{display:block;color:var(--mut);margin-top:4px;font-size:12px}
    <div id="themeOrderRow" style="display:none"><label>Custom order</label>
     <div id="themeOrderList"></div>
     <small class="hint">The cycle runs top to bottom. A newly installed theme joins at the end.</small></div>
+   <label>Theme data base URL</label><input id="themeBase" type="url" placeholder="http://dashboard.example.net">
+   <small class="hint">A theme's data source can start its URL with <code>{base}</code> and the device puts this address there, so one package follows a server between addresses without being repacked. Leave it blank unless a theme asks for it.</small>
    <div id="themeDataRow" style="display:none"><label>Live data</label>
     <div id="themeDataBox" class="muted">-</div>
     <small class="hint">What the device holds for the theme on screen. Green is a good fetch; red means the last attempt failed and the device is retrying on its own. "Low memory" means the attempt was refused before it was sent, so the source itself may be fine.</small></div>
@@ -580,6 +582,7 @@ function loadConfig(){return j('/api/config').then(function(c){C=c;
  // 0 is a legal value here ("off"), so the !=null form rather than ||.
  sv('themeCycleSec',c.themeCycleSec!=null?c.themeCycleSec:0);
  sv('themeCycleOrder',c.themeCycleOrder!=null?c.themeCycleOrder:0); themeCycleChanged();
+ sv('themeBase',c.themeBase);
  sc('carouselTicker',c.carouselTicker!==false); sc('carouselUsage',c.carouselUsage!==false); sc('carouselRadar',c.carouselRadar!==false);
  sc('carouselHa',c.carouselHa!==false); sc('carouselTheme',c.carouselTheme===true);
  // HA / MQTT slice
@@ -750,6 +753,7 @@ function collect(){
   });
   o.radar=r;
  }
+ var tbase=$('themeBase'); if(tbase)o.themeBase=tbase.value;
  return o;
 }
 function saveAll(){j('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(collect())})

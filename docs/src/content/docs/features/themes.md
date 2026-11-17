@@ -279,11 +279,46 @@ including the area needed to erase its previous contents.
 ```
 
 The `path` is a dotted path through JSON objects. Values are rendered as short
-strings; missing values show `--`. URLs must use `http://` or `https://`. Because
+strings; missing values show `--`. URLs must use `http://` or `https://`, or
+start with `{base}` (see below). Because
 this path cannot validate server certificates, an HTTPS source must explicitly
 set `"insecureTls": true`; omitting it rejects the package instead of silently
 accepting unauthenticated TLS. Data fetching is owned by theme mode and does not
 affect notifications or other display modes.
+
+### A base URL the device supplies
+
+A package normally hardcodes the address it fetches from, so the same theme
+cannot follow a server between a LAN address, a staging host and a public name
+without being edited and repacked. Instead of a full URL, a `"spec": 2` source
+may start its `url` with `{base}`:
+
+```json
+{"id": "release", "url": "{base}/release.json", "interval": 300, "insecureTls": true,
+ "fields": [{"id": "version", "path": "version"}]}
+```
+
+The device puts its **Theme data base URL** (Display tab, under the theme
+controls) in place of `{base}`. With that set to `http://dashboard.example.net`,
+the source above fetches `http://dashboard.example.net/release.json`. Repoint
+the base and every theme follows, with nothing reinstalled. The base may carry
+a path, so `http://dashboard.example.net/CA` is how you give one device a value
+the theme does not know about; a trailing slash is ignored either way.
+
+Three rules keep this predictable:
+
+- `{base}` works only at the very start of a `url`, followed by nothing, `/`
+  or `?`. Any other `{...}` in a URL is rejected when the package is installed,
+  so a typo such as `{bse}` fails where you can see it rather than being sent
+  to the server as text.
+- It needs `"spec": 2`, like the other capabilities added after spec 1.
+- It needs `"insecureTls": true`, even though the URL names no scheme. The base
+  may well be an `https://` address, and the device cannot tell at install time;
+  requiring the acknowledgement up front is what stops an HTTPS base from
+  quietly bypassing the check below.
+
+With no base set, such a source has no address to fetch and reports a failed
+fetch in **Live data** rather than silently doing nothing.
 
 Installing a theme installs its data sources too: the device will periodically
 poll every URL the manifest declares, including addresses on your LAN. Only

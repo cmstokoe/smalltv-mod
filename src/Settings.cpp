@@ -2,6 +2,7 @@
 #include "AtomicJson.h"
 #include "Platform.h"   // platformChipId() for the unique default hostname
 #include "features/theme/Languages.h"
+#include "features/theme/ThemeUrl.h"
 #include <LittleFS.h>
 
 static const char* CONFIG_PATH = "/config.json";
@@ -495,6 +496,7 @@ void Settings::setDefaults() {
 
   mode = DEFAULT_MODE;
   themeId = "";
+  themeBase = "";
   themeCycleSec = DEFAULT_THEME_CYCLE_SEC;
   themeCycleOrder = THEME_ORDER_SORTED;
   carouselSec = DEFAULT_CAROUSEL_SEC;
@@ -586,6 +588,7 @@ void settingsToJson(const Settings& s, JsonObject root, bool includeSecrets) {
 
   // Mode + shared HTTP/display
   root["themeId"] = s.themeId;
+  root["themeBase"] = s.themeBase;
   root["themeCycleSec"]     = s.themeCycleSec;
   root["themeCycleOrder"]   = s.themeCycleOrder;
   root["mode"]              = (s.mode == MODE_THEME)    ? "theme"
@@ -677,6 +680,15 @@ void settingsApplyJson(Settings& s, JsonObjectConst root) {
       if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_')) valid = false;
     }
     if (valid) s.themeId = id;
+  }
+  // Like themeId: a value that does not hold together leaves the stored one
+  // alone rather than being truncated into something subtly different. A
+  // trailing slash is normalised away instead of rejected, so that both
+  // "http://host/" and "http://host" work and "{base}/x" cannot become "//x".
+  if (root["themeBase"].is<const char*>()) {
+    String base = root["themeBase"].as<String>();
+    while (base.length() && base[base.length() - 1] == '/') base.remove(base.length() - 1);
+    if (smalltv::validThemeBase(base.c_str())) s.themeBase = base;
   }
   // 0 stays 0: it is "off", not a dwell to be clamped up to the minimum.
   if (root["themeCycleSec"].is<int>()) {

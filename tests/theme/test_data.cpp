@@ -1,4 +1,5 @@
 #include "ThemeData.h"
+#include "ThemeUrl.h"
 #include <cassert>
 #include <cstring>
 #include <iostream>
@@ -157,6 +158,40 @@ int main() {
   // A zero interval stays zero: the ladder may not invent a delay where the
   // theme asked for none.
   assert(dataRetryMs(0,0)==0&&dataRetryMs(0,3)==0);
+
+  // ---- the configurable base (ThemeUrl.h) ----
+  // A url that does not open with the placeholder is returned untouched, so an
+  // ordinary absolute source keeps going exactly where its author sent it.
+  assert(expandThemeUrl("http://dashboard.example.net/release.json","http://other.net")=="http://dashboard.example.net/release.json");
+  assert(expandThemeUrl("","http://other.net").empty());
+  assert(expandThemeUrl("{bas}/x","http://other.net")=="{bas}/x");
+  // The join itself.
+  assert(expandThemeUrl("{base}/release.json","http://dashboard.example.net")=="http://dashboard.example.net/release.json");
+  assert(expandThemeUrl("{base}?q=1","http://dashboard.example.net")=="http://dashboard.example.net?q=1");
+  assert(expandThemeUrl("{base}","http://dashboard.example.net")=="http://dashboard.example.net");
+  // A base carrying a path, which is how a per-device value is expressed now
+  // that there is no separate shortcode.
+  assert(expandThemeUrl("{base}/release.json","http://dashboard.example.net/CA")=="http://dashboard.example.net/CA/release.json");
+  // No base set: a path with no scheme, which HTTPClient refuses -- the source
+  // is then reported as a failed fetch rather than silently never tried.
+  assert(expandThemeUrl("{base}/release.json","")=="/release.json");
+
+  // validThemeBase: empty is legal (the feature is off), everything else must
+  // be an http/https URL with a host.
+  assert(validThemeBase(""));
+  assert(validThemeBase("http://dashboard.example.net"));
+  assert(validThemeBase("https://dashboard.example.net"));
+  assert(validThemeBase("http://192.168.1.10:8080/smalltv"));
+  assert(!validThemeBase("dashboard.example.net"));          // no scheme
+  assert(!validThemeBase("ftp://dashboard.example.net"));    // wrong scheme
+  assert(!validThemeBase("http://"));                        // no host
+  assert(!validThemeBase("http:///release.json"));           // empty host
+  assert(!validThemeBase("http://?q=1"));
+  assert(!validThemeBase(nullptr));
+  assert(!validThemeBase("http://dash\tboard.net"));          // control character
+  assert(!validThemeBase("http://dashb\xc3\xa9" "ard.net"));    // non-ASCII
+  assert(validThemeBase(("http://" + std::string(MaxThemeBase - 7, 'a')).c_str()));
+  assert(!validThemeBase(("http://" + std::string(MaxThemeBase - 6, 'a')).c_str()));
 
   std::cout<<"theme data deadline and asynchronous result tests passed\n";
 }
