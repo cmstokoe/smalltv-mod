@@ -118,9 +118,12 @@ int main() {
   serializeJson(d,json);assert(parseTheme(json,theme,error));
   deserializeJson(d,dataBase);d["spec"]=2;d["data"][0]["url"]="{base}";d["data"][0]["insecureTls"]=true;
   serializeJson(d,json);assert(parseTheme(json,theme,error));
-  // Spec 1 does not have it, like every other spec 2 capability.
+  // Spec 1 has it too: the editor emits spec 1 only, so gating it on spec 2
+  // would put the placeholder out of reach of the tool themes are authored in.
   deserializeJson(d,dataBase);d["data"][0]["url"]="{base}/release.json";d["data"][0]["insecureTls"]=true;
-  serializeJson(d,json);assert(!parseTheme(json,theme,error));assert(error.find("data[0].url:")==0);
+  serializeJson(d,json);assert(parseTheme(json,theme,error));
+  deserializeJson(d,dataBase);d["data"][0]["url"]="http://{base}/release.json";d["data"][0]["insecureTls"]=true;
+  serializeJson(d,json);assert(parseTheme(json,theme,error));
   // Without the acknowledgement, even though the url says http nowhere.
   deserializeJson(d,dataBase);d["spec"]=2;d["data"][0]["url"]="{base}/release.json";
   serializeJson(d,json);assert(!parseTheme(json,theme,error));assert(error.find("data[0].insecureTls:")==0);

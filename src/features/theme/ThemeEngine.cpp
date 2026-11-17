@@ -1030,7 +1030,13 @@ __attribute__((noinline)) static bool parseHeader(JsonObjectConst root, const Ma
           data.url.find('}', braceFrom) != std::string::npos)
         return sf.fail("url", "the only placeholder is {base}, at the start");
       if (usesBase) {
-        if (t.spec < 2) return sf.fail("url", "{base} needs \"spec\": 2");
+        // No spec gate. SmallTV Studio, which most themes are authored in,
+        // refuses anything but spec 1 (its core.ts: `theme.spec !== 1`), so
+        // requiring spec 2 here would put {base} out of reach of the editor
+        // entirely. It would also buy nothing: firmware without this feature
+        // rejects a bare "{base}/x" on the scheme check whatever the spec, and
+        // a spec 2 marker would not stop an older spec-2 build from fetching
+        // "http://{base}/x" literally either.
         const char after = data.url.size() > baseEnd ? data.url[baseEnd] : '\0';
         if (after && after != '/' && after != '?') return sf.fail("url", "{base} must be followed by '/' or '?'");
         // The scheme comes from a setting, not from here, so whether this ends
