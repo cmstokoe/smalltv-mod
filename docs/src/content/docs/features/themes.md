@@ -290,8 +290,8 @@ affect notifications or other display modes.
 
 A package normally hardcodes the address it fetches from, so the same theme
 cannot follow a server between a LAN address, a staging host and a public name
-without being edited and repacked. Instead of a full URL, a `"spec": 2` source
-may put `{base}` where the server's address would go:
+without being edited and repacked. Instead of a full URL, a source may put
+`{base}` where the server's address would go, in a theme of any spec version:
 
 ```json
 {"id": "release", "url": "https://{base}/release.json", "interval": 300, "insecureTls": true,
@@ -301,8 +301,9 @@ may put `{base}` where the server's address would go:
 Write it as `https://{base}/...` if you author in SmallTV Studio: the editor
 checks this field against `/^https?:\/\/[^\/?#]/` and will not export a bare
 `{base}/...`, and seeing `https:` makes it tick `insecureTls` for you, which a
-`{base}` source needs. `http://{base}/...` and the bare `{base}/...` mean
-exactly the same thing. **The scheme you write before `{base}` is discarded** —
+`{base}` source needs. (The editor writes `"spec": 1` and accepts nothing else,
+which is why this is the one data-source feature not gated on spec 2.)
+`http://{base}/...` and the bare `{base}/...` mean exactly the same thing. **The scheme you write before `{base}` is discarded** —
 the whole address, scheme included, comes from the device's setting, which is
 what lets a server move between `http` and `https` without any theme being
 repacked.
@@ -314,14 +315,13 @@ the base and every theme follows, with nothing reinstalled. The base may carry
 a path, so `http://dashboard.example.net/CA` is how you give one device a value
 the theme does not know about; a trailing slash is ignored either way.
 
-Three rules keep this predictable:
+Two rules keep this predictable:
 
 - `{base}` works only at the start of a `url` — on its own or straight after
   `http://` or `https://` — and must be followed by nothing, `/` or `?`. Any
   other `{...}` in a URL is rejected when the package is installed,
   so a typo such as `{bse}` fails where you can see it rather than being sent
   to the server as text.
-- It needs `"spec": 2`, like the other capabilities added after spec 1.
 - It needs `"insecureTls": true`, whatever scheme is written before it, because
   the real scheme comes from the setting and the device cannot know it at
   install time. Requiring the acknowledgement up front is what stops an HTTPS
