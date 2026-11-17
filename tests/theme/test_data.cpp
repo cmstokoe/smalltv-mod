@@ -159,6 +159,22 @@ int main() {
   // theme asked for none.
   assert(dataRetryMs(0,0)==0&&dataRetryMs(0,3)==0);
 
+  // A failure reports which kind it was: a refused request, an unconfigured
+  // base and a 404 all leave the same "--" on screen, so the row has to say.
+  assert(std::string(dataFailureName(FailOther)).empty());
+  assert(std::string(dataFailureName(FailHeap))=="heap");
+  assert(std::string(dataFailureName(FailNoBase))=="nobase");
+  assert(std::string(dataFailureName(99)).empty());
+  {
+    ThemeDataSource source; source.id="s"; source.url="{base}/x";
+    DataRequests requests;
+    auto job=requests.start(source,0);
+    assert(job&&job->failure==FailOther);   // nothing has gone wrong yet
+    job->failure=FailNoBase;job->finish(false);
+    auto taken=requests.take();
+    assert(taken&&!taken->success&&taken->failure==FailNoBase);
+  }
+
   // ---- the configurable base (ThemeUrl.h) ----
   // A url that does not open with the placeholder is returned untouched, so an
   // ordinary absolute source keeps going exactly where its author sent it.

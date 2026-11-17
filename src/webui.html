@@ -884,7 +884,10 @@ function showStatus(s){
     var dc=d.error?'var(--red)':(d.ok?'var(--acc)':'var(--mut)');
     // A source that failed may still have good values on screen from an
     // earlier fetch, so say which of the two states it is in.
-    var ds=d.error?((d.gated?'low memory':'fetch failed')+(d.ok?', showing last good value':'')):(d.ok?'ok':'...');
+    // "why" names the failures the device can tell apart; anything else is a
+    // request that went out and came back unusable.
+    var dw=d.error?(d.why==='heap'?'low memory':d.why==='nobase'?'no base URL set':'fetch failed'):'';
+    var ds=d.error?(dw+(d.ok?', showing last good value':'')):(d.ok?'ok':'...');
     if(d.error)ds+=' <span class="muted">(retry '+d.retryIn+'s'+(d.fails>1?', '+d.fails+' in a row':'')+')</span>';
     dh+='<div class="kv"><b style="color:'+dc+'">'+d.id+'</b><span>'+ds+'</span></div>';});
    tdb.innerHTML=dh||'<span class="muted">This theme fetches no data</span>';}}

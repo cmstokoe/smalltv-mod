@@ -56,7 +56,7 @@ void ThemeMode::unload() {
   dataScheduled_.clear();
   dataFails_.clear();
   dataOk_.clear();
-  dataGated_.clear();
+  dataReason_.clear();
   dataValues_.clear();
   dataCursor_ = 0;
   engine_.setValues({});
@@ -97,7 +97,7 @@ void ThemeMode::refreshData(const Settings& s) {
       engine_.setValues(dataValues_);
       dataFails_[index] = 0;
       dataOk_[index] = true;
-      dataGated_[index] = false;
+      dataReason_[index] = smalltv::FailOther;
       // Schedule from completion, preserving the interval even for slow sources.
       dataNextMs_[index] = millis() + sources[index].interval * 1000UL;
     } else {
@@ -107,7 +107,7 @@ void ThemeMode::refreshData(const Settings& s) {
       // recovered at all, because the theme was unloaded before the retry fell
       // due and the reload cleared the schedule again.
       if (dataFails_[index] < 250) ++dataFails_[index];
-      dataGated_[index] = result->gated;
+      dataReason_[index] = result->failure;
       dataNextMs_[index] = millis() + smalltv::dataRetryMs(sources[index].interval, dataFails_[index]);
     }
   }
@@ -124,11 +124,18 @@ void ThemeMode::refreshData(const Settings& s) {
     // next fetch and costs nothing beyond the copy already being made. A url
     // without the placeholder comes back unchanged.
     request->source.url = smalltv::expandThemeUrl(sources[i].url, s.themeBase.c_str());
-    if (!startThemeDataFetch(request)) {
+    if (smalltv::usesThemeBase(sources[i].url) && !s.themeBase.length()) {
+      // The theme defers its address to a setting that has not been filled in,
+      // so there is nothing to fetch. Say which it is: without this the row
+      // reads "fetch failed", identical to a server that is simply down, and
+      // the one thing the user has to do is invisible.
+      request->failure = smalltv::FailNoBase;
+      request->finish(false);
+    } else if (!startThemeDataFetch(request)) {
       // Refused before it left the device -- the heap gate in
       // startThemeDataFetch(). Recorded so /api/status can say so: this and a
       // 404 otherwise look identical from the outside.
-      request->gated = true;
+      request->failure = smalltv::FailHeap;
       request->finish(false);
     }
     dataScheduled_[i] = true;
@@ -147,7 +154,7 @@ ThemeMode::DataStatus ThemeMode::dataStatus(size_t i) const {
   out.ok = dataOk_[i];
   out.fails = dataFails_[i];
   out.error = dataFails_[i] > 0;
-  out.gated = out.error && dataGated_[i];
+  out.why = out.error ? smalltv::dataFailureName(dataReason_[i]) : "";
   if (out.error && dataScheduled_[i]) {
     const int32_t left = static_cast<int32_t>(dataNextMs_[i] - millis());
     out.retryIn = left > 0 ? static_cast<uint32_t>(left) / 1000 : 0;
@@ -281,7 +288,7 @@ void ThemeMode::service(const Settings& s) {
         dataScheduled_.assign(theme.data.size(), false);
         dataFails_.assign(theme.data.size(), 0);
         dataOk_.assign(theme.data.size(), false);
-        dataGated_.assign(theme.data.size(), false);
+        dataReason_.assign(theme.data.size(), smalltv::FailOther);
         dataValues_.clear();
         dataCursor_ = 0;
       }

@@ -261,7 +261,7 @@ static void handleStatus() {
     t.id = d.id;             // borrowed from the loaded theme; written at once
     t.ok = d.ok;
     t.error = d.error;
-    t.gated = d.gated;       // refused for want of heap, not tried and failed
+    t.why = d.why;           // "heap", "nobase", or "" for a plain failure
     t.fails = d.fails;
     t.retryIn = d.retryIn;
     return t;

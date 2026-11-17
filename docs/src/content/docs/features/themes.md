@@ -328,8 +328,10 @@ Two rules keep this predictable:
   base from quietly bypassing the check below. Authoring the URL as
   `https://{base}/...` gets this ticked automatically in SmallTV Studio.
 
-With no base set, such a source has no address to fetch and reports a failed
-fetch in **Live data** rather than silently doing nothing.
+With no base set, such a source has no address to fetch. Nothing is sent, and
+**Live data** says `no base URL set` against that source rather than the
+`fetch failed` it shows for a server that is unreachable — so a theme waiting
+on a setting you have not filled in does not look like a broken endpoint.
 
 Installing a theme installs its data sources too: the device will periodically
 poll every URL the manifest declares, including addresses on your LAN. Only

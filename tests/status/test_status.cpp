@@ -110,7 +110,7 @@ static std::string reference(const Case& c) {
       t["ok"] = d.ok;
       t["error"] = d.error;
       if (d.error) {
-        t["gated"] = d.gated;
+        if (d.why[0]) t["why"] = std::string(d.why);
         t["fails"] = d.fails;
         t["retryIn"] = d.retryIn;
       }
@@ -255,9 +255,11 @@ static std::vector<Case> cases() {
   StatusThemeSource stale{};   stale.id = "prices"; stale.ok = true; stale.error = true;
                                stale.fails = 2; stale.retryIn = 5;
   StatusThemeSource refused{}; refused.id = "trains"; refused.error = true;
-                               refused.gated = true; refused.fails = 7; refused.retryIn = 10;
+                               refused.why = "heap"; refused.fails = 7; refused.retryIn = 10;
+  StatusThemeSource nobase{};  nobase.id = "release"; nobase.error = true;
+                               nobase.why = "nobase"; nobase.fails = 3; nobase.retryIn = 10;
   StatusThemeSource fresh{};   fresh.id = "quote \"of\" the \\ day";
-  theme.themeData = {live, stale, refused, fresh};
+  theme.themeData = {live, stale, refused, nobase, fresh};
   all.push_back(theme);
 
   // Built, but no theme on screen: an empty array, not a missing key. The

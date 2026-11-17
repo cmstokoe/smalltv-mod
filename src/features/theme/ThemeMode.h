@@ -101,7 +101,7 @@ class ThemeMode : public DisplayMode {
     const char* id = "";
     bool ok = false;        // has delivered values since this theme loaded
     bool error = false;     // the last completed attempt failed
-    bool gated = false;     // ...and was refused before it left the device
+    const char* why = "";   // ...and why: "heap", "nobase", or "" for a plain failure
     uint8_t fails = 0;      // consecutive failures, driving the retry ladder
     uint32_t retryIn = 0;   // seconds until the next attempt
   };
@@ -137,7 +137,9 @@ class ThemeMode : public DisplayMode {
   // Reported through dataStatus(). dataOk_ distinguishes "never delivered"
   // from "delivered once and is now stale"; dataGated_ distinguishes a fetch
   // the heap gate refused to start from one that went out and failed.
-  std::vector<bool> dataOk_, dataGated_;
+  std::vector<bool> dataOk_;
+  // smalltv::DataFailure for the last failed attempt, per source.
+  std::vector<uint8_t> dataReason_;
   std::vector<smalltv::ThemeValue> dataValues_;
   smalltv::DataRequests dataRequests_;
   size_t dataCursor_ = 0;

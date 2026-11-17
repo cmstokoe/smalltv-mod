@@ -75,7 +75,7 @@ struct StatusThemeSource {
   const char* id = "";
   bool ok = false;        // has delivered values since the theme loaded
   bool error = false;     // the last completed attempt failed
-  bool gated = false;     // ...refused for want of heap, not tried and failed
+  const char* why = "";   // ...and why: "heap", "nobase"; left out when plain
   uint8_t fails = 0;      // consecutive failures
   uint32_t retryIn = 0;   // seconds to the next attempt; written when `error`
 };
@@ -185,7 +185,7 @@ template <class Out, class Row> void writeStatusThemeData(Out& out, size_t count
     member(out, PSTR(",\"ok\":"), t.ok);
     member(out, PSTR(",\"error\":"), t.error);
     if (t.error) {
-      member(out, PSTR(",\"gated\":"), t.gated);
+      if (t.why[0]) member(out, PSTR(",\"why\":"), t.why);
       member(out, PSTR(",\"fails\":"), t.fails);
       member(out, PSTR(",\"retryIn\":"), t.retryIn);
     }

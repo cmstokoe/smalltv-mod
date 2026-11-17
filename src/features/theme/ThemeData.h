@@ -8,6 +8,19 @@ namespace smalltv {
 constexpr size_t MaxDataBody = 2048;
 constexpr uint32_t DataTimeoutMs = 3000;
 
+// Why a fetch failed, reported per source through /api/status so the Theme
+// card can say which it was instead of only that something went wrong.
+enum DataFailure : uint8_t {
+  FailOther = 0,    // it went out and did not come back usable
+  FailHeap = 1,     // refused for want of heap, never left the device
+  FailNoBase = 2,   // the source wants {base} and no base URL is configured
+};
+// The names /api/status uses. Short, and stable enough for the web UI to key
+// on: the page turns them into a sentence, so this is not display text.
+inline const char* dataFailureName(uint8_t failure) {
+  return failure == FailHeap ? "heap" : failure == FailNoBase ? "nobase" : "";
+}
+
 // How long until a source is fetched again. A good fetch waits its declared
 // interval; a failed one comes back on a short, doubling backoff instead.
 // Without this, one refused fetch costs a source its whole interval -- 300 s
@@ -106,12 +119,12 @@ struct DataFetch {
   size_t index;
   std::vector<ThemeValue> values;
   bool success = false;
-  // True when the attempt was refused for want of heap rather than tried and
-  // failed -- set either by the caller, when startThemeDataFetch() will not
-  // start it, or by the worker at its own gate. Like `values` it is written
-  // before finish()'s release store and read after finished()'s acquire, so
-  // it needs no synchronisation of its own.
-  bool gated = false;
+  // Why the attempt failed, when it did. A bare "it failed" cannot be acted
+  // on: a refused request, an unconfigured base URL and a 404 all leave the
+  // same "--" on screen. Like `values` this is written before finish()'s
+  // release store and read after finished()'s acquire, so it needs no
+  // synchronisation of its own.
+  uint8_t failure = FailOther;
   DataFetch(const ThemeDataSource& s, size_t i) : source(s), index(i) {}
   void cancel() { cancelled_.store(true); }
   bool cancelled() const { return cancelled_.load(); }
