@@ -17,6 +17,59 @@ files.
 4. Set the timezone under **Clock & night mode**. Theme mode starts NTP even when
    night mode is off. Unsynchronized time fields display `--`.
 
+## Cycle through your themes
+
+With more than one package installed, theme mode can show each in turn instead
+of only the selected one.
+
+1. Set **Cycle every** to the number of seconds a theme should stay up. `0`,
+   the default, switches cycling off and keeps today's behaviour exactly.
+2. Choose a **Cycle order**: `A-Z` by theme ID, `Custom` for a sequence you
+   arrange yourself, or `Shuffle`.
+3. A list of your themes appears with a box beside each one. Leave a box blank
+   and that theme uses the **Cycle every** value; put a number in it (60 to
+   3600 seconds) and that theme alone stays up for that long. A clock you want
+   to glance at can pass in a minute while a dashboard holds for five.
+
+**Shuffle shows every installed theme once before any of them repeats**, then
+reshuffles. It is not a random pick each time, so nothing is left out for long.
+
+Each box is saved the moment you change it, like the arrows below — the times
+live with the themes on the device, not in the settings document, so **Save
+settings** does not carry them. They survive a reboot, and a theme keeps its
+time when another is installed or removed.
+
+**Custom** adds ▲/▼ beside each theme; the cycle runs top to
+bottom. The order is kept on the device, survives a reboot, and a newly
+installed theme joins at the end rather than appearing in the middle of a
+sequence you arranged. Removing a theme drops it from the order.
+
+The selected theme — the one you picked with **Use theme** — stays the pinned
+selection and is where the cycle starts. Cycling never changes it, so switching
+cycling off returns to that theme, and the setting is not rewritten to flash
+every time the picture changes.
+
+### Why a minute is the shortest step
+
+One minute is the floor, and it is a hardware limit rather than caution. Only
+one theme fits in RAM on the ESP8266, so every change is a full reload: the
+running package is dropped, the next is parsed from flash, and all 240×240
+pixels are repainted. The repaint is visible — the old theme holds the screen
+during the parse, then the new one paints over it top to bottom.
+
+Any theme that fetches data starts that over too. Values are not kept per theme
+across a change, so a theme with a JSON source shows `--` in those fields until
+each source has been fetched again — on the ESP8266 those fetches run one at a
+time on the main loop. At a shorter dwell the device would spend a visible part
+of its time reloading rather than showing you a clock.
+
+### In a carousel
+
+Cycling works alongside **Theme clock** in the carousel, and the dwell counts
+only the time a theme is actually on screen. If the carousel gives the theme
+slot 30 seconds at a time and the theme dwell is two minutes, each theme is up
+for four visits before the next one appears, rather than never changing.
+
 The repository includes `examples/themes/pixel-room.stheme`, a complete example
 with a background, animated cat, time, and date. Its source assets and manifest
 are in `examples/themes/pixel-room/`. `examples/themes/live-status.stheme`
@@ -235,11 +288,59 @@ including the area needed to erase its previous contents.
 ```
 
 The `path` is a dotted path through JSON objects. Values are rendered as short
-strings; missing values show `--`. URLs must use `http://` or `https://`. Because
+strings; missing values show `--`. URLs must use `http://` or `https://`, or
+start with `{base}` (see below). Because
 this path cannot validate server certificates, an HTTPS source must explicitly
 set `"insecureTls": true`; omitting it rejects the package instead of silently
 accepting unauthenticated TLS. Data fetching is owned by theme mode and does not
 affect notifications or other display modes.
+
+### A base URL the device supplies
+
+A package normally hardcodes the address it fetches from, so the same theme
+cannot follow a server between a LAN address, a staging host and a public name
+without being edited and repacked. Instead of a full URL, a source may put
+`{base}` where the server's address would go, in a theme of any spec version:
+
+```json
+{"id": "release", "url": "https://{base}/release.json", "interval": 300, "insecureTls": true,
+ "fields": [{"id": "version", "path": "version"}]}
+```
+
+Write it as `https://{base}/...` if you author in SmallTV Studio: the editor
+checks this field against `/^https?:\/\/[^\/?#]/` and will not export a bare
+`{base}/...`, and seeing `https:` makes it tick `insecureTls` for you, which a
+`{base}` source needs. (The editor writes `"spec": 1` and accepts nothing else,
+which is why this is the one data-source feature not gated on spec 2.)
+`http://{base}/...` and the bare `{base}/...` mean exactly the same thing. **The scheme you write before `{base}` is discarded** —
+the whole address, scheme included, comes from the device's setting, which is
+what lets a server move between `http` and `https` without any theme being
+repacked.
+
+The device puts its **Theme data base URL** (Display tab, under the theme
+controls) in place of `{base}`. With that set to `http://dashboard.example.net`,
+the source above fetches `http://dashboard.example.net/release.json`. Repoint
+the base and every theme follows, with nothing reinstalled. The base may carry
+a path, so `http://dashboard.example.net/CA` is how you give one device a value
+the theme does not know about; a trailing slash is ignored either way.
+
+Two rules keep this predictable:
+
+- `{base}` works only at the start of a `url` — on its own or straight after
+  `http://` or `https://` — and must be followed by nothing, `/` or `?`. Any
+  other `{...}` in a URL is rejected when the package is installed,
+  so a typo such as `{bse}` fails where you can see it rather than being sent
+  to the server as text.
+- It needs `"insecureTls": true`, whatever scheme is written before it, because
+  the real scheme comes from the setting and the device cannot know it at
+  install time. Requiring the acknowledgement up front is what stops an HTTPS
+  base from quietly bypassing the check below. Authoring the URL as
+  `https://{base}/...` gets this ticked automatically in SmallTV Studio.
+
+With no base set, such a source has no address to fetch. Nothing is sent, and
+**Live data** says `no base URL set` against that source rather than the
+`fetch failed` it shows for a server that is unreachable — so a theme waiting
+on a setting you have not filled in does not look like a broken endpoint.
 
 Installing a theme installs its data sources too: the device will periodically
 poll every URL the manifest declares, including addresses on your LAN. Only

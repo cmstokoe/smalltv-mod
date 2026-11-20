@@ -1,4 +1,5 @@
 #include "ThemeEngine.h"
+#include "ThemeUrl.h"
 #ifdef ARDUINO
 #include "config.h"
 #endif
@@ -1017,14 +1018,43 @@ __attribute__((noinline)) static bool parseHeader(JsonObjectConst root, const Ma
       if (!sf.keys("|id|url|interval|insecureTls|fields|") || !sf.text("id", data.id, 32) || !sf.text("url", data.url, 200) || !sf.number("interval", 10, 86400, interval) || !sf.boolean("insecureTls", data.insecureTls, false)) return false;
       if (!validId(data.id) || data.id.find('.') != std::string::npos) return sf.fail("id", "use ASCII letters, digits, '-' or '_'");
       if (t.spec >= 2 && (data.id == "time" || data.id == "device")) return sf.fail("id", fromFlash(reservedId));
-      // The embedded TLS client cannot validate a server certificate, so an
-      // https:// source must explicitly acknowledge that with `insecureTls`
-      // rather than the firmware silently accepting unauthenticated TLS.
-      size_t hostStart = data.url.rfind("https://", 0) == 0 ? 8 : data.url.rfind("http://", 0) == 0 ? 7 : std::string::npos;
-      if (hostStart == std::string::npos) return sf.fail("url", "only http:// and https:// URLs are supported");
-      if (hostStart == 8 && !data.insecureTls) return sf.fail("insecureTls", "set true to acknowledge that HTTPS certificate validation is unavailable");
-      size_t hostEnd = data.url.find('/', hostStart);
-      if (hostStart == data.url.size() || (hostEnd == hostStart) || (data.url[hostStart] == '?' || data.url[hostStart] == '#')) return sf.fail("url", "URL must include a host");
+      // A url may defer its origin to the device's configured base, so the
+      // same package follows a server between addresses without being
+      // repacked. The placeholder is only meaningful at the very start, and
+      // every other brace is refused: a typo like {bse} would otherwise be
+      // sent to the server literally, which is a hard failure to diagnose.
+      const size_t baseEnd = smalltv::themeBaseEnd(data.url);
+      const bool usesBase = baseEnd != std::string::npos;
+      const size_t braceFrom = usesBase ? baseEnd : 0;
+      if (data.url.find('{', braceFrom) != std::string::npos ||
+          data.url.find('}', braceFrom) != std::string::npos)
+        return sf.fail("url", "the only placeholder is {base}, at the start");
+      if (usesBase) {
+        // No spec gate. SmallTV Studio, which most themes are authored in,
+        // refuses anything but spec 1 (its core.ts: `theme.spec !== 1`), so
+        // requiring spec 2 here would put {base} out of reach of the editor
+        // entirely. It would also buy nothing: firmware without this feature
+        // rejects a bare "{base}/x" on the scheme check whatever the spec, and
+        // a spec 2 marker would not stop an older spec-2 build from fetching
+        // "http://{base}/x" literally either.
+        const char after = data.url.size() > baseEnd ? data.url[baseEnd] : '\0';
+        if (after && after != '/' && after != '?') return sf.fail("url", "{base} must be followed by '/' or '?'");
+        // The scheme comes from a setting, not from here, so whether this ends
+        // up on TLS cannot be known at install time. Require the acknowledgement
+        // rather than infer it: the alternative is a package that installs
+        // cleanly and then refuses to fetch depending on a setting, and it
+        // would let an https base slip past the opt-in this check exists for.
+        if (!data.insecureTls) return sf.fail("insecureTls", "set true: {base} may resolve to an https:// address");
+      } else {
+        // The embedded TLS client cannot validate a server certificate, so an
+        // https:// source must explicitly acknowledge that with `insecureTls`
+        // rather than the firmware silently accepting unauthenticated TLS.
+        size_t hostStart = data.url.rfind("https://", 0) == 0 ? 8 : data.url.rfind("http://", 0) == 0 ? 7 : std::string::npos;
+        if (hostStart == std::string::npos) return sf.fail("url", "only http:// and https:// URLs are supported");
+        if (hostStart == 8 && !data.insecureTls) return sf.fail("insecureTls", "set true to acknowledge that HTTPS certificate validation is unavailable");
+        size_t hostEnd = data.url.find('/', hostStart);
+        if (hostStart == data.url.size() || (hostEnd == hostStart) || (data.url[hostStart] == '?' || data.url[hostStart] == '#')) return sf.fail("url", "URL must include a host");
+      }
       data.interval = static_cast<uint32_t>(interval);
       auto fields = source["fields"].as<JsonArrayConst>();
       if (fields.isNull() || fields.size() == 0 || fields.size() > MaxDataFields) return sf.fail("fields", "expected 1 to 8 fields");

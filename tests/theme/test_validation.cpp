@@ -95,6 +95,51 @@ int main() {
   deserializeJson(d,dataBase);d["layers"][0]["value"]="{unknown.temp}";serializeJson(d,json);assert(!parseTheme(json,theme,error));
   deserializeJson(d,dataBase);d["data"][0]["url"]="https://";serializeJson(d,json);assert(!parseTheme(json,theme,error));
   deserializeJson(d,dataBase);d["data"][0]["fields"][0]["path"]="main..temp";serializeJson(d,json);assert(!parseTheme(json,theme,error));
+  // ---- {base}: the device supplies the origin (ThemeUrl.h) ----
+  // Accepted at spec 2 with the TLS acknowledgement, because the configured
+  // base may be https and the scheme is not knowable here.
+  deserializeJson(d,dataBase);d["spec"]=2;d["data"][0]["url"]="{base}/release.json";d["data"][0]["insecureTls"]=true;
+  serializeJson(d,json);assert(parseTheme(json,theme,error));
+  assert(theme.data[0].url=="{base}/release.json");   // stored verbatim; joined at fetch
+  // The spellings SmallTV Studio can export: its validator requires
+  // /^https?:\/\/[^\/?#]/, so the bare form never leaves the editor.
+  deserializeJson(d,dataBase);d["spec"]=2;d["data"][0]["url"]="http://{base}/release.json";d["data"][0]["insecureTls"]=true;
+  serializeJson(d,json);assert(parseTheme(json,theme,error));
+  assert(theme.data[0].url=="http://{base}/release.json");
+  deserializeJson(d,dataBase);d["spec"]=2;d["data"][0]["url"]="https://{base}/release.json";d["data"][0]["insecureTls"]=true;
+  serializeJson(d,json);assert(parseTheme(json,theme,error));
+  // Still only a prefix: a scheme that is not http/https does not carry it.
+  deserializeJson(d,dataBase);d["spec"]=2;d["data"][0]["url"]="ftp://{base}/release.json";d["data"][0]["insecureTls"]=true;
+  serializeJson(d,json);assert(!parseTheme(json,theme,error));
+  // And the "followed by / or ?" rule applies past the scheme too.
+  deserializeJson(d,dataBase);d["spec"]=2;d["data"][0]["url"]="http://{base}release.json";d["data"][0]["insecureTls"]=true;
+  serializeJson(d,json);assert(!parseTheme(json,theme,error));
+  deserializeJson(d,dataBase);d["spec"]=2;d["data"][0]["url"]="{base}?q=1";d["data"][0]["insecureTls"]=true;
+  serializeJson(d,json);assert(parseTheme(json,theme,error));
+  deserializeJson(d,dataBase);d["spec"]=2;d["data"][0]["url"]="{base}";d["data"][0]["insecureTls"]=true;
+  serializeJson(d,json);assert(parseTheme(json,theme,error));
+  // Spec 1 has it too: the editor emits spec 1 only, so gating it on spec 2
+  // would put the placeholder out of reach of the tool themes are authored in.
+  deserializeJson(d,dataBase);d["data"][0]["url"]="{base}/release.json";d["data"][0]["insecureTls"]=true;
+  serializeJson(d,json);assert(parseTheme(json,theme,error));
+  deserializeJson(d,dataBase);d["data"][0]["url"]="http://{base}/release.json";d["data"][0]["insecureTls"]=true;
+  serializeJson(d,json);assert(parseTheme(json,theme,error));
+  // Without the acknowledgement, even though the url says http nowhere.
+  deserializeJson(d,dataBase);d["spec"]=2;d["data"][0]["url"]="{base}/release.json";
+  serializeJson(d,json);assert(!parseTheme(json,theme,error));assert(error.find("data[0].insecureTls:")==0);
+  // Only as a prefix, and only followed by '/' or '?'.
+  deserializeJson(d,dataBase);d["spec"]=2;d["data"][0]["url"]="{base}release.json";d["data"][0]["insecureTls"]=true;
+  serializeJson(d,json);assert(!parseTheme(json,theme,error));
+  deserializeJson(d,dataBase);d["spec"]=2;d["data"][0]["url"]="http://example.test/{base}";d["data"][0]["insecureTls"]=true;
+  serializeJson(d,json);assert(!parseTheme(json,theme,error));
+  // Any other brace is refused rather than sent to the server literally: a
+  // typo must fail at install, where it can be seen.
+  deserializeJson(d,dataBase);d["spec"]=2;d["data"][0]["url"]="{bse}/release.json";d["data"][0]["insecureTls"]=true;
+  serializeJson(d,json);assert(!parseTheme(json,theme,error));
+  deserializeJson(d,dataBase);d["spec"]=2;d["data"][0]["url"]="http://example.test/a{b";d["data"][0]["insecureTls"]=true;
+  serializeJson(d,json);assert(!parseTheme(json,theme,error));
+  deserializeJson(d,dataBase);d["spec"]=2;d["data"][0]["url"]="{base}/a{b";d["data"][0]["insecureTls"]=true;
+  serializeJson(d,json);assert(!parseTheme(json,theme,error));
   deserializeJson(d,dataBase);d["data"]=42;serializeJson(d,json);assert(!parseTheme(json,theme,error));
   json.clear();deserializeJson(d,base);d["display"]["width"]=320;serializeJson(d,json);
   assert(!parseTheme(json,theme,error));assert(error.find("display.width:")==0);

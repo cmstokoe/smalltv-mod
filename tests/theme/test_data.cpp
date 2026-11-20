@@ -1,4 +1,5 @@
 #include "ThemeData.h"
+#include "ThemeUrl.h"
 #include <cassert>
 #include <cstring>
 #include <iostream>
@@ -119,5 +120,106 @@ int main() {
   assert(!requests.take());engine.setValues(result->values);
   assert(engine.update(2501,nullptr).empty());
   engine.update(2551,nullptr);assert(engine.states()[0].scrollOffset==1);
+  // The retry ladder: a good fetch waits its interval, a failed one comes back
+  // quickly (2 s, for the heap dip around a load) then backs off 5/10/20/40 s,
+  // and once the ladder is spent the source settles into its normal cadence --
+  // retried for ever, never given up on.
+  assert(dataRetryMs(300,0)==300000);
+  assert(dataRetryMs(300,1)==2000);
+  assert(dataRetryMs(300,2)==5000);
+  assert(dataRetryMs(300,3)==10000);
+  // Capped: the step that would have been 20 s, and every one after it.
+  assert(dataRetryMs(300,4)==10000);
+  assert(dataRetryMs(300,5)==10000);
+  assert(dataRetryMs(300,6)==10000);
+  assert(dataRetryMs(300,7)==10000);
+  assert(dataRetryMs(300,8)==300000);
+  assert(dataRetryMs(300,250)==300000);
+
+  // The property the cap exists for: a source failing from the moment its
+  // theme loads is still retried in the last seconds of the shortest dwell
+  // (THEME_CYCLE_MIN_SEC, 60 s). Walk the ladder and check the final attempt
+  // lands inside that window -- with a 40 s step it fell at 77 s, outside it,
+  // leaving 23 s of the dwell with no attempt in it.
+  uint32_t at = 0, last = 0;
+  for (uint8_t f = 1; f <= DataRetryMax; ++f) {
+    last = at;
+    at += dataRetryMs(300, f);
+  }
+  assert(last < 60000 && at >= 57000);
+  // The cap is a floor on frequency, not a ceiling: a source whose interval is
+  // shorter than a ladder step is never slowed down by a failure, and a short
+  // interval can retry sooner than the ladder says. Same as the ticker.
+  assert(dataRetryMs(15,1)==2000);
+  assert(dataRetryMs(15,3)==10000);
+  assert(dataRetryMs(15,7)==10000);
+  assert(dataRetryMs(8,3)==8000);
+  assert(dataRetryMs(1,1)==1000);
+  // A zero interval stays zero: the ladder may not invent a delay where the
+  // theme asked for none.
+  assert(dataRetryMs(0,0)==0&&dataRetryMs(0,3)==0);
+
+  // A failure reports which kind it was: a refused request, an unconfigured
+  // base and a 404 all leave the same "--" on screen, so the row has to say.
+  assert(std::string(dataFailureName(FailOther)).empty());
+  assert(std::string(dataFailureName(FailHeap))=="heap");
+  assert(std::string(dataFailureName(FailNoBase))=="nobase");
+  assert(std::string(dataFailureName(99)).empty());
+  {
+    ThemeDataSource source; source.id="s"; source.url="{base}/x";
+    DataRequests requests;
+    auto job=requests.start(source,0);
+    assert(job&&job->failure==FailOther);   // nothing has gone wrong yet
+    job->failure=FailNoBase;job->finish(false);
+    auto taken=requests.take();
+    assert(taken&&!taken->success&&taken->failure==FailNoBase);
+  }
+
+  // ---- the configurable base (ThemeUrl.h) ----
+  // A url that does not open with the placeholder is returned untouched, so an
+  // ordinary absolute source keeps going exactly where its author sent it.
+  assert(expandThemeUrl("http://dashboard.example.net/release.json","http://other.net")=="http://dashboard.example.net/release.json");
+  assert(expandThemeUrl("","http://other.net").empty());
+  assert(expandThemeUrl("{bas}/x","http://other.net")=="{bas}/x");
+  // The join itself.
+  assert(expandThemeUrl("{base}/release.json","http://dashboard.example.net")=="http://dashboard.example.net/release.json");
+  // The two scheme-prefixed spellings mean the same thing: SmallTV Studio
+  // validates this field with /^https?:\/\/[^\/?#]/ and would not export the
+  // bare form. The scheme written there is discarded -- the origin, scheme
+  // included, comes from the base.
+  assert(expandThemeUrl("http://{base}/release.json","http://dashboard.example.net")=="http://dashboard.example.net/release.json");
+  assert(expandThemeUrl("https://{base}/release.json","http://dashboard.example.net")=="http://dashboard.example.net/release.json");
+  assert(expandThemeUrl("http://{base}/release.json","https://dashboard.example.net")=="https://dashboard.example.net/release.json");
+  assert(expandThemeUrl("https://{base}","http://dashboard.example.net/CA")=="http://dashboard.example.net/CA");
+  // A scheme with no placeholder after it is an ordinary url, untouched.
+  assert(expandThemeUrl("http://{other}/x","http://dashboard.example.net")=="http://{other}/x");
+  assert(usesThemeBase("http://{base}/x") && usesThemeBase("https://{base}") && usesThemeBase("{base}"));
+  assert(!usesThemeBase("http://example.net/{base}") && !usesThemeBase("ftp://{base}/x"));
+  assert(expandThemeUrl("{base}?q=1","http://dashboard.example.net")=="http://dashboard.example.net?q=1");
+  assert(expandThemeUrl("{base}","http://dashboard.example.net")=="http://dashboard.example.net");
+  // A base carrying a path, which is how a per-device value is expressed now
+  // that there is no separate shortcode.
+  assert(expandThemeUrl("{base}/release.json","http://dashboard.example.net/CA")=="http://dashboard.example.net/CA/release.json");
+  // No base set: a path with no scheme, which HTTPClient refuses -- the source
+  // is then reported as a failed fetch rather than silently never tried.
+  assert(expandThemeUrl("{base}/release.json","")=="/release.json");
+
+  // validThemeBase: empty is legal (the feature is off), everything else must
+  // be an http/https URL with a host.
+  assert(validThemeBase(""));
+  assert(validThemeBase("http://dashboard.example.net"));
+  assert(validThemeBase("https://dashboard.example.net"));
+  assert(validThemeBase("http://192.168.1.10:8080/smalltv"));
+  assert(!validThemeBase("dashboard.example.net"));          // no scheme
+  assert(!validThemeBase("ftp://dashboard.example.net"));    // wrong scheme
+  assert(!validThemeBase("http://"));                        // no host
+  assert(!validThemeBase("http:///release.json"));           // empty host
+  assert(!validThemeBase("http://?q=1"));
+  assert(!validThemeBase(nullptr));
+  assert(!validThemeBase("http://dash\tboard.net"));          // control character
+  assert(!validThemeBase("http://dashb\xc3\xa9" "ard.net"));    // non-ASCII
+  assert(validThemeBase(("http://" + std::string(MaxThemeBase - 7, 'a')).c_str()));
+  assert(!validThemeBase(("http://" + std::string(MaxThemeBase - 6, 'a')).c_str()));
+
   std::cout<<"theme data deadline and asynchronous result tests passed\n";
 }

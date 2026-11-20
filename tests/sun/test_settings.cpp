@@ -71,6 +71,98 @@ static void testLimits() {
   CHECK(s.clock.sunRise == 30 && s.clock.sunSet == 0 && s.clock.sunLow == 100, "partial update");
 }
 
+// Theme cycling. 0 means "off" rather than "as short as allowed", so it is
+// the one value that must survive a clamp whose floor is 60.
+static void testThemeCycle() {
+  Settings s;
+  s.setDefaults();
+  CHECK(s.themeCycleSec == 0, "cycling off by default: %u", (unsigned)s.themeCycleSec);
+  CHECK(s.themeCycleOrder == 0, "sorted order by default: %u", (unsigned)s.themeCycleOrder);
+
+  apply(s, "{\"themeCycleSec\":120,\"themeCycleOrder\":2}");
+  CHECK(s.themeCycleSec == 120, "dwell accepted: %u", (unsigned)s.themeCycleSec);
+  CHECK(s.themeCycleOrder == 2, "shuffle accepted: %u", (unsigned)s.themeCycleOrder);
+
+  // 0 stays 0: off is not clamped up to the minimum.
+  apply(s, "{\"themeCycleSec\":0}");
+  CHECK(s.themeCycleSec == 0, "zero stays off: %u", (unsigned)s.themeCycleSec);
+  // Anything else below the floor comes up to it, and a negative is off.
+  apply(s, "{\"themeCycleSec\":30}");
+  CHECK(s.themeCycleSec == 60, "30 raised to the 60 floor: %u", (unsigned)s.themeCycleSec);
+  apply(s, "{\"themeCycleSec\":-5}");
+  CHECK(s.themeCycleSec == 0, "negative reads as off: %u", (unsigned)s.themeCycleSec);
+  apply(s, "{\"themeCycleSec\":9999}");
+  CHECK(s.themeCycleSec == 3600, "capped at an hour: %u", (unsigned)s.themeCycleSec);
+
+  apply(s, "{\"themeCycleOrder\":9}");
+  CHECK(s.themeCycleOrder == 2, "order capped at shuffle: %u", (unsigned)s.themeCycleOrder);
+  apply(s, "{\"themeCycleOrder\":-1}");
+  CHECK(s.themeCycleOrder == 0, "order floored at sorted: %u", (unsigned)s.themeCycleOrder);
+
+  // A config written before this feature existed leaves both alone, which is
+  // what keeps an existing device on its current behaviour after an update.
+  Settings old;
+  old.setDefaults();
+  old.themeCycleSec = 300;
+  old.themeCycleOrder = 1;
+  apply(old, "{\"mode\":\"theme\",\"themeId\":\"pixel-room\"}");
+  CHECK(old.themeCycleSec == 300, "missing key keeps the value: %u", (unsigned)old.themeCycleSec);
+  CHECK(old.themeCycleOrder == 1, "missing order keeps the value: %u", (unsigned)old.themeCycleOrder);
+
+  // Wrong types are ignored rather than coerced.
+  apply(old, "{\"themeCycleSec\":\"120\",\"themeCycleOrder\":true}");
+  CHECK(old.themeCycleSec == 300 && old.themeCycleOrder == 1, "wrong types ignored");
+}
+static void testThemeBase() {
+  Settings s;
+  s.setDefaults();
+  CHECK(s.themeBase.length() == 0, "no base by default");
+
+  apply(s, "{\"themeBase\":\"http://dashboard.example.net\"}");
+  CHECK(s.themeBase == "http://dashboard.example.net", "base accepted: %s", s.themeBase.c_str());
+
+  // A trailing slash is normalised away rather than rejected, so that both
+  // forms work and "{base}/x" can never resolve to "//x".
+  apply(s, "{\"themeBase\":\"http://dashboard.example.net/\"}");
+  CHECK(s.themeBase == "http://dashboard.example.net", "trailing slash dropped: %s", s.themeBase.c_str());
+  apply(s, "{\"themeBase\":\"https://dashboard.example.net/CA/\"}");
+  CHECK(s.themeBase == "https://dashboard.example.net/CA", "path kept, slash dropped: %s", s.themeBase.c_str());
+
+  // Emptying it is legal: that turns the feature off.
+  apply(s, "{\"themeBase\":\"\"}");
+  CHECK(s.themeBase.length() == 0, "cleared: %s", s.themeBase.c_str());
+
+  // A value that does not hold together leaves the stored one alone, rather
+  // than being truncated into something subtly different.
+  Settings kept;
+  kept.setDefaults();
+  kept.themeBase = "http://dashboard.example.net";
+  apply(kept, "{\"themeBase\":\"dashboard.example.net\"}");
+  CHECK(kept.themeBase == "http://dashboard.example.net", "no scheme rejected: %s", kept.themeBase.c_str());
+  apply(kept, "{\"themeBase\":\"http://\"}");
+  CHECK(kept.themeBase == "http://dashboard.example.net", "no host rejected: %s", kept.themeBase.c_str());
+  apply(kept, "{\"themeBase\":\"ftp://dashboard.example.net\"}");
+  CHECK(kept.themeBase == "http://dashboard.example.net", "wrong scheme rejected: %s", kept.themeBase.c_str());
+  {
+    String huge = "{\"themeBase\":\"http://";
+    for (int i = 0; i < 120; ++i) huge += 'a';
+    huge += "\"}";
+    apply(kept, huge.c_str());
+    CHECK(kept.themeBase == "http://dashboard.example.net", "over-length rejected: %s", kept.themeBase.c_str());
+  }
+
+  // A config written before this feature existed leaves it alone.
+  Settings old;
+  old.setDefaults();
+  old.themeBase = "http://dashboard.example.net";
+  apply(old, "{\"mode\":\"theme\",\"themeId\":\"pixel-room\"}");
+  CHECK(old.themeBase == "http://dashboard.example.net", "missing key keeps the value: %s", old.themeBase.c_str());
+
+  // Wrong types are ignored rather than coerced.
+  apply(old, "{\"themeBase\":42}");
+  CHECK(old.themeBase == "http://dashboard.example.net", "wrong type ignored: %s", old.themeBase.c_str());
+}
+
 static void testRoundTrip() {
   Settings s;
   s.setDefaults();
@@ -109,6 +201,21 @@ static void testRoundTrip() {
   settingsToJson(s, api.to<JsonObject>(), false);
   CHECK(api["clock"]["sunEnabled"].as<bool>() == true && api["clock"]["sunRise"].as<int>() == 45 &&
         api["radar"]["useDevice"].is<bool>(), "present in the API output");
+
+  // The theme base is not a secret, so it survives the backup (CONTRIBUTING)
+  // and is served to the settings page as-is, with no *Set flag.
+  Settings b;
+  b.setDefaults();
+  apply(b, "{\"themeBase\":\"https://dashboard.example.net/CA\"}");
+  JsonDocument bd;
+  settingsToJson(b, bd.to<JsonObject>(), true);
+  Settings b2;
+  b2.setDefaults();
+  settingsApplyJson(b2, bd.as<JsonObjectConst>());
+  CHECK(b2.themeBase == "https://dashboard.example.net/CA", "base survives a round trip: %s", b2.themeBase.c_str());
+  JsonDocument bapi;
+  settingsToJson(b, bapi.to<JsonObject>(), false);
+  CHECK(bapi["themeBase"].as<String>() == "https://dashboard.example.net/CA", "base present in the API output");
 }
 
 static void testOldConfigs() {
@@ -213,6 +320,8 @@ static void testExclusive() {
 int main() {
   testDefaults();
   testLimits();
+  testThemeCycle();
+  testThemeBase();
   testRoundTrip();
   testOldConfigs();
   testRadarLocation();

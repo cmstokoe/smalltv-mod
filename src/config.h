@@ -14,6 +14,13 @@
 // ---------------------------------------------------------------------------
 #define FW_NAME     "smalltv-mod"
 #define FW_VERSION  "3.4.0"
+// The name on the boot splash (Gfx.cpp's gfxBoot, 3x text). At GFX_FONT_W
+// that is 18 px a character, so it has to stay within 13 characters to fit
+// TFT_WIDTH; longer and gfxDrawCentered pins it to x=0 and it runs off the
+// right. This is display only -- FW_NAME above is the identity the web UI,
+// /api/status and the self-update asset names use, and changing that would
+// break the update check.
+#define BOOT_NAME   "RipjarTV"
 
 // Project / update references (shown in the web UI; used by the GitHub self-update)
 #define REPO_URL      "https://github.com/giovi321/smalltv-mod"
@@ -435,3 +442,21 @@
 #ifndef WITH_THEME
 #define WITH_THEME 1
 #endif
+
+// Theme cycling: show each installed package in turn. 0 is off, and is the
+// default, so a device that has never asked for it is unchanged.
+//
+// The floor is a minute because a change is not free. Only one theme fits in
+// RAM on the ESP8266 (issue #30), so each one is unload -> parse -> full
+// 240x240 repaint, and any data source the incoming theme declares refetches
+// from scratch -- synchronously on the main loop on that chip, up to
+// DataTimeoutMs each. Below a minute the device would spend a visible share of
+// its time repainting and refetching rather than showing a clock.
+#define DEFAULT_THEME_CYCLE_SEC   0
+#define THEME_CYCLE_MIN_SEC      60
+#define THEME_CYCLE_MAX_SEC    3600
+// Order modes; the values are persisted in config.json, so they are fixed.
+// Kept in step with smalltv::ThemeCycleOrder in features/theme/ThemeCycle.h.
+#define THEME_ORDER_SORTED        0
+#define THEME_ORDER_MANDATED      1
+#define THEME_ORDER_SHUFFLE       2
