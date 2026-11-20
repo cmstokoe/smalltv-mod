@@ -151,6 +151,29 @@ void reorderTheme(const String& id, bool up) {
   }
   publishOrder(written);
 }
+// Stores one theme's time on screen. Seeds the file first for the same reason
+// reorderTheme() does: a device that has never reordered has no file yet, and
+// a dwell has to be able to be the first thing anyone sets.
+void setDwell(const String& id, uint16_t sec) {
+  if (!LittleFS.exists(orderPath)) {
+    bool seeded;
+    {
+      File to = LittleFS.open(orderNext, "w");
+      FileSink sink(to);
+      seeded = to && seedOrder(sink);
+    }
+    publishOrder(seeded);
+  }
+  bool written;
+  {
+    ThemeFile from;
+    from.open(orderPath);
+    File to = LittleFS.open(orderNext, "w");
+    FileSink sink(to);
+    written = to && smalltv::setThemeDwell(from, sink, id.c_str(), sec);
+  }
+  publishOrder(written);
+}
 // Firmware 3.1.0 and 3.1.1 kept one `<id>.meta` file per theme, each in an
 // 8 KB block of storage; the index replaces them. Removed at boot, a few
 // names per pass, so the directory is never changed while it is read.
@@ -597,8 +620,13 @@ void listOrder() {
       // the maintenance pass will drop it from the file at the next install
       // or delete anyway.
       if (line.empty()) continue;
-      if (!LittleFS.exists(String("/themes/") + line.c_str() + ".stheme")) continue;
-      order.add(line);
+      uint16_t sec = 0;
+      const std::string id = smalltv::orderLineId(line, &sec);
+      if (id.empty()) continue;
+      if (!LittleFS.exists(String("/themes/") + id.c_str() + ".stheme")) continue;
+      JsonObject row = order.add<JsonObject>();
+      row["id"] = id;
+      row["sec"] = sec;   // 0 = follow the global dwell
     }
   } else {
     std::string previous;
@@ -607,7 +635,9 @@ void listOrder() {
       eachInstalledTheme([&cursor](const String& id) { cursor.offer(std::string(id.c_str())); });
       if (cursor.empty() || (n && cursor.wrapped())) break;
       previous = cursor.chosen();
-      order.add(previous);
+      JsonObject row = order.add<JsonObject>();
+      row["id"] = previous;
+      row["sec"] = 0;   // no file yet, so nothing is customised
     }
   }
   String json;
@@ -625,19 +655,34 @@ void orderTheme() {
     return;
   }
   String id;
-  bool up = false;
+  bool up = false, isMove = false;
+  uint16_t sec = 0;
   {
     JsonDocument doc;
-    if (deserializeJson(doc, server->arg("plain")) || !doc["id"].is<const char*>() ||
-        !doc["dir"].is<const char*>()) {
-      reply(400, "Expected JSON with id and dir");
+    if (deserializeJson(doc, server->arg("plain")) || !doc["id"].is<const char*>()) {
+      reply(400, "Expected JSON with id and dir or sec");
       return;
     }
     id = doc["id"].as<String>();
-    const String dir = doc["dir"].as<String>();
-    if (dir == "up") up = true;
-    else if (dir != "down") {
-      reply(400, "Expected dir up or down");
+    if (doc["dir"].is<const char*>()) {
+      isMove = true;
+      const String dir = doc["dir"].as<String>();
+      if (dir == "up") up = true;
+      else if (dir != "down") {
+        reply(400, "Expected dir up or down");
+        return;
+      }
+    } else if (doc["sec"].is<int>()) {
+      // 0 clears the override; anything else is held to the same bounds the
+      // global dwell is, so one theme cannot sit on screen for a day.
+      const int wanted = doc["sec"];
+      if (wanted && (wanted < THEME_CYCLE_MIN_SEC || wanted > THEME_CYCLE_MAX_SEC)) {
+        reply(400, "Expected sec 0, or between 60 and 3600");
+        return;
+      }
+      sec = (uint16_t)wanted;
+    } else {
+      reply(400, "Expected JSON with id and dir or sec");
       return;
     }
   }
@@ -650,7 +695,8 @@ void orderTheme() {
     reply(404, "Theme not found");
     return;
   }
-  reorderTheme(id, up);
+  if (isMove) reorderTheme(id, up);
+  else setDwell(id, sec);
   reply(200, id);
 }
 }

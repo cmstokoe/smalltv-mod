@@ -71,6 +71,71 @@ class OrderLines {
   uint32_t pos_ = 0;
 };
 
+// A line is "<id>" or "<id> <seconds>": the id, and optionally how long that
+// theme should stay on screen. Returns the id, and through `sec` the dwell
+// when one is present and well formed -- 0 meaning "use the global default",
+// which is also what a malformed suffix falls back to rather than the line
+// being thrown away. A theme is far better off cycling at the default than
+// disappearing from the order because someone hand-edited the file.
+inline std::string orderLineId(const std::string& line, uint16_t* sec = nullptr) {
+  if (sec) *sec = 0;
+  const size_t space = line.find(' ');
+  if (space == std::string::npos) return line;
+  if (sec) {
+    uint32_t value = 0;
+    bool digits = space + 1 < line.size();
+    for (size_t i = space + 1; i < line.size() && digits; ++i) {
+      if (line[i] < '0' || line[i] > '9') digits = false;
+      else value = value * 10 + static_cast<uint32_t>(line[i] - '0');
+      if (value > 0xFFFF) digits = false;
+    }
+    if (digits) *sec = static_cast<uint16_t>(value);
+  }
+  return line.substr(0, space);
+}
+
+// The line to store for one theme. A dwell of 0 writes the bare id, so a file
+// where nothing has been customised reads exactly as it did before dwells
+// existed.
+inline std::string orderLine(const std::string& id, uint16_t sec) {
+  return sec ? id + " " + std::to_string(sec) : id;
+}
+
+// How long `id` should stay on screen, or 0 for "use the global default".
+inline uint16_t orderDwell(Source& file, const std::string& id) {
+  OrderLines lines(file);
+  std::string line;
+  while (lines.next(line)) {
+    if (line.empty()) continue;
+    uint16_t sec = 0;
+    if (orderLineId(line, &sec) == id) return sec;
+  }
+  return 0;
+}
+
+// Rewrites the order with one theme's dwell set (0 clears it back to the
+// default). An id that is not in the file is appended, so a dwell can be set
+// before the maintenance pass has ever run.
+inline bool setThemeDwell(Source& from, Sink& to, const std::string& id, uint16_t sec) {
+  OrderLines lines(from);
+  std::string line;
+  bool wrote = false;
+  auto emit = [&to](const std::string& text) {
+    return to.write(text.data(), text.size()) && to.write("\n", 1);
+  };
+  while (lines.next(line)) {
+    if (line.empty()) continue;
+    if (!wrote && orderLineId(line) == id) {
+      wrote = true;
+      if (!emit(orderLine(id, sec))) return false;
+      continue;
+    }
+    if (!emit(line)) return false;
+  }
+  if (!wrote && !id.empty() && !emit(orderLine(id, sec))) return false;
+  return true;
+}
+
 // The id after `current`, wrapping to the first. Empty when the file holds no
 // usable id, which tells the caller to fall back to sorted order.
 //
@@ -83,15 +148,17 @@ inline std::string orderSuccessor(Source& file, const std::string& current) {
   bool seen = false, haveFirst = false;
   while (lines.next(line)) {
     if (line.empty()) continue;
+    const std::string id = orderLineId(line);   // the dwell suffix is not part of it
+    if (id.empty()) continue;
     if (!haveFirst) {
-      first = line;
+      first = id;
       haveFirst = true;
     }
     if (seen) {
-      next = line;
+      next = id;
       break;
     }
-    if (line == current) seen = true;
+    if (id == current) seen = true;
   }
   if (!next.empty()) return next;
   return first;
@@ -110,8 +177,12 @@ inline bool copyThemeOrder(Source& from, Sink& to, const std::string& remove,
   std::string line;
   bool haveAdd = false;
   while (lines.next(line)) {
-    if (line.empty() || line == remove) continue;
-    if (line == add) {
+    if (line.empty()) continue;
+    // Match on the id alone, but write the line back whole: that is what keeps
+    // a theme's dwell through an install or a delete of some other theme.
+    const std::string id = orderLineId(line);
+    if (id.empty() || id == remove) continue;
+    if (id == add) {
       if (haveAdd) continue;   // a duplicate already in the file
       haveAdd = true;
     }
@@ -139,7 +210,7 @@ inline bool moveThemeOrder(Source& from, Sink& to, const std::string& id, bool u
   while (lines.next(line)) {
     if (line.empty()) continue;
     if (up) {
-      if (line == id && !moved && haveHeld) {
+      if (orderLineId(line) == id && !moved && haveHeld) {
         // id then the line that was above it
         if (!emit(line) || !emit(held)) return false;
         haveHeld = false;
@@ -157,7 +228,7 @@ inline bool moveThemeOrder(Source& from, Sink& to, const std::string& id, bool u
         moved = true;
         continue;
       }
-      if (line == id && !moved) {
+      if (orderLineId(line) == id && !moved) {
         held = line;
         haveHeld = true;
         continue;

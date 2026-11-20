@@ -174,18 +174,36 @@ String ThemeMode::activeId(const Settings& s) const {
 void ThemeMode::serviceCycle(const Settings& s) {
   if (!s.themeCycleSec) {
     // Switched off: drop the RAM-only entry so themeId takes the screen back.
+    // themeCycleSec stays the master switch -- a per-theme dwell tunes the
+    // cycle, it does not turn one on.
     cycleId_ = "";
     cycleElapsedMs_ = lastTickMs_ = 0;
     cycleSkips_ = 0;
+    cycleDwellSec_ = 0;
+    dwellId_ = "";
     return;
   }
   const uint32_t now = millis();
   if (lastTickMs_) cycleElapsedMs_ += now - lastTickMs_;
   lastTickMs_ = now;
-  if (cycleElapsedMs_ < (uint32_t)s.themeCycleSec * 1000UL) return;
+  readDwell(s);
+  const uint16_t dwell = cycleDwellSec_ ? cycleDwellSec_ : s.themeCycleSec;
+  if (cycleElapsedMs_ < (uint32_t)dwell * 1000UL) return;
   cycleElapsedMs_ = 0;
   cycleSkips_ = 0;   // a dwell ran to completion, so the lap is healthy
   advanceCycle(s);
+}
+// Reads the dwell for the entry on screen, once per entry. The read lands in
+// advanceCycle()'s wake, before the next service() call parses the new
+// package, so it never shares the heap with the parse peak.
+void ThemeMode::readDwell(const Settings& s) {
+  const String id = activeId(s);
+  if (dwellId_ == id) return;
+  dwellId_ = id;
+  cycleDwellSec_ = 0;
+  if (!id.length()) return;
+  ThemeFile order;
+  if (order.open("/themes/.order")) cycleDwellSec_ = smalltv::orderDwell(order, str(id));
 }
 bool ThemeMode::advanceCycle(const Settings& s) {
   const String current = activeId(s);
@@ -235,6 +253,8 @@ void ThemeMode::invalidate(const Settings& s) {
     cycleElapsedMs_ = 0;
     cycleSkips_ = 0;
   }
+  // A dwell may have been edited, so the cached value is re-read next tick.
+  dwellId_ = "";
   const bool onScreen = s.mode == MODE_THEME || (s.mode == MODE_CAROUSEL && s.carouselTheme);
   if (loadedId_ != activeId(s) || !onScreen) unload();
   // A failed load may be retried after installation or settings changes.

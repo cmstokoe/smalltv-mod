@@ -141,11 +141,12 @@ small.hint{display:block;color:var(--mut);margin-top:4px;font-size:12px}
    <button class="btn" id="themeUploadBtn" onclick="installTheme()">Install .stheme</button>
    <small class="hint" id="themeStatus">Loading themes…</small>
    <label>Cycle every (s, 0 = off)</label><input id="themeCycleSec" type="number" min="0" max="3600" step="60" onchange="themeCycleChanged()">
+   <small class="hint">The default for every theme. Give a theme its own time below to override it.</small>
    <label>Cycle order</label><select id="themeCycleOrder" onchange="themeCycleChanged()">
     <option value="0">A-Z</option><option value="1">Custom</option><option value="2">Shuffle</option></select>
-   <div id="themeOrderRow" style="display:none"><label>Custom order</label>
+   <div id="themeOrderRow" style="display:none"><label id="themeOrderLabel">Time on screen</label>
     <div id="themeOrderList"></div>
-    <small class="hint">The cycle runs top to bottom. A newly installed theme joins at the end.</small></div>
+    <small class="hint" id="themeOrderHint"></small></div>
    <label>Theme data base URL</label><input id="themeBase" type="url" placeholder="http://dashboard.example.net">
    <small class="hint">A theme's data source can write <code>{base}</code> where the server address goes (<code>https://{base}/data.json</code>) and the device puts this address there, so one package follows a server between addresses without being repacked. Leave it blank unless a theme asks for it.</small>
    <div id="themeDataRow" style="display:none"><label>Live data</label>
@@ -984,7 +985,7 @@ function loadThemes(){return j('/api/themes').then(function(d){
  // $ rather than gv(): this runs inside the slice tests/theme/test_webui.js
  // evaluates on its own, where gv() is not in scope, and a lean build may have
  // removed the control entirely.
- var ord=$('themeCycleOrder'); if(ord&&ord.value==='1')loadThemeOrder();
+ var cyc=$('themeCycleSec'); if(cyc&&parseInt(cyc.value)>0)loadThemeOrder();
  var select=$('themeSelect');if(!select)return;select.textContent='';themeEntries=d.themes||[];
  themeEntries.forEach(function(t){var o=document.createElement('option');o.value=t.id;o.textContent=t.valid===false?t.id+' — invalid package':t.name+' — '+t.version;select.appendChild(o)});
  if(d.selected)select.value=d.selected;
@@ -994,22 +995,39 @@ function loadThemes(){return j('/api/themes').then(function(d){
 function selectTheme(){var id=$('themeSelect').value;var theme=themeEntries.find(function(t){return t.id===id});
  if(!theme||theme.valid===false){toast('Choose a valid installed theme first');return}
  themeRequest('/api/themes/select',{id:id}).then(function(){C.mode='theme';C.themeId=id;sv('mode','theme');modeChanged();toast('Theme selected');loadThemes()}).catch(function(e){toast(e.message)})}
-// The custom order is only worth showing when it is the one in use.
+// The list carries a time for every theme, so it is shown whenever cycling is
+// on, whatever the order. Only the arrows are specific to the custom order.
 function themeCycleChanged(){var row=$('themeOrderRow');if(!row)return;
- var custom=gv('themeCycleOrder')==='1';row.style.display=custom?'block':'none';
- if(custom)loadThemeOrder();}
+ var on=parseInt(gv('themeCycleSec'))>0;row.style.display=on?'block':'none';
+ var hint=$('themeOrderHint'),label=$('themeOrderLabel'),order=gv('themeCycleOrder');
+ if(label)label.textContent=order==='1'?'Order and time on screen':'Time on screen';
+ if(hint)hint.textContent=(order==='1'?'The cycle runs top to bottom. A newly installed theme joins at the end. ':
+  order==='2'?'Themes are reshuffled each lap, and each shows once per lap. ':
+  'Themes run in ID order. ')+'A blank box uses the default above.';
+ if(on)loadThemeOrder();}
 function loadThemeOrder(){var list=$('themeOrderList');if(!list)return;
- return j('/api/themes/order').then(function(d){var ids=d.order||[];list.textContent='';
-  if(!ids.length){var e=document.createElement('small');e.className='hint';e.textContent='No themes installed';list.appendChild(e);return}
-  ids.forEach(function(id,i){
+ return j('/api/themes/order').then(function(d){var rows=d.order||[],custom=gv('themeCycleOrder')==='1';list.textContent='';
+  if(!rows.length){var e=document.createElement('small');e.className='hint';e.textContent='No themes installed';list.appendChild(e);return}
+  rows.forEach(function(t,i){
    var row=document.createElement('div');row.className='chk';
-   var up=document.createElement('button');up.className='btn';up.textContent='\u25b2';up.disabled=i===0;
-   up.onclick=function(){moveTheme(id,'up')};
-   var down=document.createElement('button');down.className='btn';down.textContent='\u25bc';down.disabled=i===ids.length-1;
-   down.onclick=function(){moveTheme(id,'down')};
-   var name=document.createElement('label');name.textContent=(i+1)+'. '+id;
-   row.appendChild(up);row.appendChild(down);row.appendChild(name);list.appendChild(row)})})
+   if(custom){
+    var up=document.createElement('button');up.className='btn';up.textContent='\u25b2';up.disabled=i===0;
+    up.onclick=function(){moveTheme(t.id,'up')};
+    var down=document.createElement('button');down.className='btn';down.textContent='\u25bc';down.disabled=i===rows.length-1;
+    down.onclick=function(){moveTheme(t.id,'down')};
+    row.appendChild(up);row.appendChild(down)}
+   var name=document.createElement('label');name.textContent=custom?(i+1)+'. '+t.id:t.id;
+   var sec=document.createElement('input');sec.type='number';sec.min=60;sec.max=3600;sec.step=60;
+   sec.style.width='90px';sec.value=t.sec?t.sec:'';sec.placeholder=gv('themeCycleSec')||'';
+   sec.onchange=function(){setThemeSec(t.id,sec)};
+   row.appendChild(name);row.appendChild(sec);list.appendChild(row)})})
  .catch(function(e){toast(e.message)})}
+// Written as soon as it is changed, like the arrows: the order file is device
+// state, not part of the settings document, and Save settings does not carry it.
+function setThemeSec(id,input){var v=input.value.trim()===''?0:parseInt(input.value);
+ if(isNaN(v)||(v&&(v<60||v>3600))){toast('A theme time is 0 (use the default), or 60 to 3600');return}
+ themeRequest('/api/themes/order',{id:id,sec:v})
+  .then(function(){return loadThemeOrder()}).catch(function(e){toast(e.message)})}
 function moveTheme(id,dir){themeRequest('/api/themes/order',{id:id,dir:dir})
  .then(function(){return loadThemeOrder()}).catch(function(e){toast(e.message)})}
 function deleteTheme(){var id=$('themeSelect').value;if(!id)return;

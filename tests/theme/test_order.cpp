@@ -129,6 +129,54 @@ static void testMove() {
   assert(move(move(four, "charlie", true), "charlie", false) == four);
 }
 
+static std::string dwellSet(const std::string& file, const std::string& id, uint16_t sec) {
+  Memory source(file);
+  Text out;
+  assert(setThemeDwell(source, out, id, sec));
+  return out.data;
+}
+
+static uint16_t dwellOf(const std::string& file, const std::string& id) {
+  Memory source(file);
+  return orderDwell(source, id);
+}
+
+static void testDwell() {
+  // A line is the id alone, or the id and the seconds that theme stays up.
+  uint16_t sec = 0;
+  assert(orderLineId("alpha", &sec) == "alpha" && sec == 0);
+  assert(orderLineId("alpha 300", &sec) == "alpha" && sec == 300);
+  // A malformed suffix falls back to the default rather than losing the theme:
+  // a hand-edited file must not drop an entry out of the cycle.
+  assert(orderLineId("alpha 30x", &sec) == "alpha" && sec == 0);
+  assert(orderLineId("alpha ", &sec) == "alpha" && sec == 0);
+  assert(orderLineId("alpha 99999", &sec) == "alpha" && sec == 0);   // past 16 bits
+  assert(orderLine("alpha", 0) == "alpha" && orderLine("alpha", 300) == "alpha 300");
+
+  const std::string mixed = "alpha 300\nbravo\ncharlie 60\n";
+  assert(dwellOf(mixed, "alpha") == 300);
+  assert(dwellOf(mixed, "bravo") == 0);
+  assert(dwellOf(mixed, "charlie") == 60);
+  assert(dwellOf(mixed, "missing") == 0);
+
+  // The sequence still reads as ids, with the dwell invisible to it.
+  assert(after(mixed, "alpha") == "bravo");
+  assert(after(mixed, "charlie") == "alpha");
+  assert(after(mixed, "") == "alpha");
+
+  // Setting, clearing, and setting one that is not in the file yet.
+  assert(dwellSet(mixed, "bravo", 120) == "alpha 300\nbravo 120\ncharlie 60\n");
+  assert(dwellSet(mixed, "alpha", 0) == "alpha\nbravo\ncharlie 60\n");
+  assert(dwellSet(mixed, "delta", 90) == "alpha 300\nbravo\ncharlie 60\ndelta 90\n");
+
+  // The dwell survives the maintenance passes, which is the whole point of
+  // keeping it on the same line.
+  assert(maintain(mixed, "bravo", "") == "alpha 300\ncharlie 60\n");
+  assert(maintain(mixed, "", "delta") == "alpha 300\nbravo\ncharlie 60\ndelta\n");
+  assert(move(mixed, "charlie", true) == "alpha 300\ncharlie 60\nbravo\n");
+  assert(move(mixed, "alpha", false) == "bravo\nalpha 300\ncharlie 60\n");
+}
+
 static void testYields() {
   // CONTRIBUTING: a loop over input-sized data pauses, so the watchdog and
   // WiFi are served while a long file is read.
@@ -142,6 +190,7 @@ int main() {
   testTolerance();
   testMaintenance();
   testMove();
+  testDwell();
   testYields();
   std::cout << "theme order tests passed\n";
   return 0;

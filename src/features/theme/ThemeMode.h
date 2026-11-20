@@ -119,6 +119,10 @@ class ThemeMode : public DisplayMode {
   // Picks the next theme. False when there is nothing to move to (nothing
   // installed, or only the one already showing).
   bool advanceCycle(const Settings& s);
+  // How long the theme on screen should stay there: its own entry in
+  // /themes/.order when it has one, else the global themeCycleSec. Reads the
+  // file, so it is called when the entry changes rather than every frame.
+  void readDwell(const Settings& s);
 
   // A package that will not load is skipped, so one bad theme does not park
   // the cycle on an error screen. Bounded at a full lap's worth, after which
@@ -156,6 +160,13 @@ class ThemeMode : public DisplayMode {
   uint32_t lastTickMs_ = 0;     // previous service() millis(); 0 = just arrived
   uint32_t lapSeed_ = 0;        // shuffle permutation; rerolled each lap
   uint8_t cycleSkips_ = 0;      // consecutive unloadable packages this lap
+  // Seconds the entry on screen should stay up, read from /themes/.order when
+  // the entry changes. 0 = follow themeCycleSec. Cached because the dwell is
+  // compared every service() call and the file is not worth reopening at that
+  // rate; readDwell() refreshes it on a change of entry and on invalidate(),
+  // so an edit in the web UI takes effect without waiting for the next lap.
+  uint16_t cycleDwellSec_ = 0;
+  String dwellId_;              // the entry cycleDwellSec_ was read for
 };
 extern ThemeMode g_themeMode;
 #endif

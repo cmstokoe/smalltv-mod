@@ -22,15 +22,24 @@ files.
 With more than one package installed, theme mode can show each in turn instead
 of only the selected one.
 
-1. Set **Cycle every** to the number of seconds each theme should stay up. `0`,
+1. Set **Cycle every** to the number of seconds a theme should stay up. `0`,
    the default, switches cycling off and keeps today's behaviour exactly.
 2. Choose a **Cycle order**: `A-Z` by theme ID, `Custom` for a sequence you
    arrange yourself, or `Shuffle`.
+3. A list of your themes appears with a box beside each one. Leave a box blank
+   and that theme uses the **Cycle every** value; put a number in it (60 to
+   3600 seconds) and that theme alone stays up for that long. A clock you want
+   to glance at can pass in a minute while a dashboard holds for five.
 
 **Shuffle shows every installed theme once before any of them repeats**, then
 reshuffles. It is not a random pick each time, so nothing is left out for long.
 
-**Custom** reveals a list with ▲/▼ beside each theme; the cycle runs top to
+Each box is saved the moment you change it, like the arrows below — the times
+live with the themes on the device, not in the settings document, so **Save
+settings** does not carry them. They survive a reboot, and a theme keeps its
+time when another is installed or removed.
+
+**Custom** adds ▲/▼ beside each theme; the cycle runs top to
 bottom. The order is kept on the device, survives a reboot, and a newly
 installed theme joins at the end rather than appearing in the middle of a
 sequence you arranged. Removing a theme drops it from the order.
