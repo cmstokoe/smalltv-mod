@@ -1397,344 +1397,354 @@ conditions:
 
 actions:
   # A screen publishes when its entity is set and reporting, or when a value
-  # template is set (template-driven screens need no entity at all).
-  - condition: template
-    value_template: >-
-      {{ (screen_1_entity != ''
-          and states(screen_1_entity) not in ('unknown', 'unavailable', 'none'))
-         or screen_1_value_tpl != '' }}
-  - action: mqtt.publish
-    data:
-      topic: "smalltv/{{ hostname }}/screen/{{ screen_1_slot }}"
-      retain: true
-      payload: >-
-        {% set e = screen_1_entity -%}
-        {% set title = screen_1_title_tpl if screen_1_title_tpl != '' else (screen_1_title if screen_1_title != '' else (state_attr(e, 'friendly_name') if e != '' else '')) -%}
-        {% set icon = screen_1_icon_tpl if screen_1_icon_tpl != '' else screen_1_icon -%}
-        {% set bm_tpl = screen_1_bitmap_tpl | trim -%}
-        {% set bm = bm_tpl if bm_tpl != '' else (screen_1_bitmap | trim) -%}
-        {% set bs = screen_1_bitmap_size | int(24) -%}
-        {% set bsc = screen_1_bitmap_scale | int(1) -%}
-        {% set color = screen_1_color_tpl if screen_1_color_tpl != '' else screen_1_color -%}
-        {% set bg = screen_1_bg_tpl if screen_1_bg_tpl != '' else screen_1_bg -%}
-        {% set vmin = screen_1_value_min_size | int(1) -%}
-        {% set vmax = screen_1_value_max_size | int(4) -%}
-        {% set iy = screen_1_icon_y | int(30) -%}
-        {% set isz = screen_1_icon_size | int(2) -%}
-        {% set ty = screen_1_title_y | int(110) -%}
-        {% set tmin = screen_1_title_min_size | int(1) -%}
-        {% set tmax = screen_1_title_max_size | int(2) -%}
-        {% set vy = screen_1_value_y | int(150) -%}
-        {% if screen_1_value_tpl != '' -%}
-        {% set v = screen_1_value_tpl -%}
-        {% else -%}
-        {% set u = state_attr(e, 'unit_of_measurement') or '' -%}
-        {% set v = states(e) ~ (' ' ~ u if u != '' else '') -%}
-        {% endif -%}
-        {# Value block: 232 px budget (width is length * 6 * scale). Pick the
-           largest scale in [lo..hi] that fits one line. Longer text wraps at
-           lo, lines start at value_y with pitch 8*lo + 2, at most 4 lines and
-           never past the last pixel row. -#}
-        {% set lo = [vmin, vmax] | min -%}
-        {% set hi = [vmin, vmax] | max -%}
-        {% set vy0 = [vy, 232] | min -%}
-        {% set v = v | truncate(150, True, '', 0) -%}
-        {% set fit = namespace(s=0) -%}
-        {% for cand in range(hi, lo - 1, -1) -%}
-        {% if fit.s == 0 and v | length * 6 * cand <= 232 -%}
-        {% set fit.s = cand -%}
-        {% endif -%}
-        {% endfor -%}
-        {% if fit.s > 0 -%}
-        {% set vs = fit.s -%}
-        {% set vlines = [v] -%}
-        {% else -%}
-        {% set vs = lo -%}
-        {% set w = 232 // (6 * lo) -%}
-        {% set maxl = [4, (236 - vy) // (8 * lo + 2)] | min -%}
-        {% if maxl < 1 -%}
-        {% set vlines = [v | truncate(w, True, '', 0)] -%}
-        {% else -%}
-        {% set vlines = (v | wordwrap(w, true, '\n')).split('\n') -%}
-        {% set vlines = vlines[:maxl] -%}
-        {% set vlines = vlines[:-1] + [vlines | last | truncate(w, True, '', 0)] -%}
-        {% endif -%}
-        {% endif -%}
-        {# Title stays one line: largest scale in [tlo..thi] that fits,
-           else tlo, then cut. -#}
-        {% set tlo = [tmin, tmax] | min -%}
-        {% set thi = [tmin, tmax] | max -%}
-        {% set tfit = namespace(s=0) -%}
-        {% for cand in range(thi, tlo - 1, -1) -%}
-        {% if tfit.s == 0 and title | length * 6 * cand <= 232 -%}
-        {% set tfit.s = cand -%}
-        {% endif -%}
-        {% endfor -%}
-        {% set ts = tfit.s if tfit.s > 0 else tlo -%}
-        {% set title = title | truncate(232 // (6 * ts), True, '', 0) -%}
-        {"bg":{{ bg | tojson }},"ttl":{{ screen_ttl | int(900) }},"draw":[
-        {%- if bm != '' -%}
-        {"t":"bitmap","x":120,"y":{{ iy }},"w":{{ bs }},"h":{{ bs }},{%- if bsc != 1 %}"s":{{ bsc }},{% endif -%}"c":{{ color | tojson }},"a":"c","d":{{ bm | tojson }}},
-        {%- elif icon != 'none' and icon != '' -%}
-        {"t":"icon","x":120,"y":{{ iy }},"s":{{ isz }},"c":{{ color | tojson }},"a":"c","v":{{ icon | tojson }}},
-        {%- endif -%}
-        {"t":"text","x":120,"y":{{ ty }},"s":{{ ts }},"c":{{ color | tojson }},"a":"c","v":{{ title | tojson }}},
-        {%- for line in vlines -%}
-        {"t":"text","x":120,"y":{{ vy0 + loop.index0 * (8 * vs + 2) }},"s":{{ vs }},"c":{{ color | tojson }},"a":"c","v":{{ line | tojson }}}{{ ',' if not loop.last else '' }}
-        {%- endfor -%}
-        ]}
-  - condition: template
-    value_template: >-
-      {{ (screen_2_entity != ''
-          and states(screen_2_entity) not in ('unknown', 'unavailable', 'none'))
-         or screen_2_value_tpl != '' }}
-  - action: mqtt.publish
-    data:
-      topic: "smalltv/{{ hostname }}/screen/{{ screen_2_slot }}"
-      retain: true
-      payload: >-
-        {% set e = screen_2_entity -%}
-        {% set title = screen_2_title_tpl if screen_2_title_tpl != '' else (screen_2_title if screen_2_title != '' else (state_attr(e, 'friendly_name') if e != '' else '')) -%}
-        {% set icon = screen_2_icon_tpl if screen_2_icon_tpl != '' else screen_2_icon -%}
-        {% set bm_tpl = screen_2_bitmap_tpl | trim -%}
-        {% set bm = bm_tpl if bm_tpl != '' else (screen_2_bitmap | trim) -%}
-        {% set bs = screen_2_bitmap_size | int(24) -%}
-        {% set bsc = screen_2_bitmap_scale | int(1) -%}
-        {% set color = screen_2_color_tpl if screen_2_color_tpl != '' else screen_2_color -%}
-        {% set bg = screen_2_bg_tpl if screen_2_bg_tpl != '' else screen_2_bg -%}
-        {% set vmin = screen_2_value_min_size | int(1) -%}
-        {% set vmax = screen_2_value_max_size | int(4) -%}
-        {% set iy = screen_2_icon_y | int(30) -%}
-        {% set isz = screen_2_icon_size | int(2) -%}
-        {% set ty = screen_2_title_y | int(110) -%}
-        {% set tmin = screen_2_title_min_size | int(1) -%}
-        {% set tmax = screen_2_title_max_size | int(2) -%}
-        {% set vy = screen_2_value_y | int(150) -%}
-        {% if screen_2_value_tpl != '' -%}
-        {% set v = screen_2_value_tpl -%}
-        {% else -%}
-        {% set u = state_attr(e, 'unit_of_measurement') or '' -%}
-        {% set v = states(e) ~ (' ' ~ u if u != '' else '') -%}
-        {% endif -%}
-        {# Value block: 232 px budget (width is length * 6 * scale). Pick the
-           largest scale in [lo..hi] that fits one line. Longer text wraps at
-           lo, lines start at value_y with pitch 8*lo + 2, at most 4 lines and
-           never past the last pixel row. -#}
-        {% set lo = [vmin, vmax] | min -%}
-        {% set hi = [vmin, vmax] | max -%}
-        {% set vy0 = [vy, 232] | min -%}
-        {% set v = v | truncate(150, True, '', 0) -%}
-        {% set fit = namespace(s=0) -%}
-        {% for cand in range(hi, lo - 1, -1) -%}
-        {% if fit.s == 0 and v | length * 6 * cand <= 232 -%}
-        {% set fit.s = cand -%}
-        {% endif -%}
-        {% endfor -%}
-        {% if fit.s > 0 -%}
-        {% set vs = fit.s -%}
-        {% set vlines = [v] -%}
-        {% else -%}
-        {% set vs = lo -%}
-        {% set w = 232 // (6 * lo) -%}
-        {% set maxl = [4, (236 - vy) // (8 * lo + 2)] | min -%}
-        {% if maxl < 1 -%}
-        {% set vlines = [v | truncate(w, True, '', 0)] -%}
-        {% else -%}
-        {% set vlines = (v | wordwrap(w, true, '\n')).split('\n') -%}
-        {% set vlines = vlines[:maxl] -%}
-        {% set vlines = vlines[:-1] + [vlines | last | truncate(w, True, '', 0)] -%}
-        {% endif -%}
-        {% endif -%}
-        {# Title stays one line: largest scale in [tlo..thi] that fits,
-           else tlo, then cut. -#}
-        {% set tlo = [tmin, tmax] | min -%}
-        {% set thi = [tmin, tmax] | max -%}
-        {% set tfit = namespace(s=0) -%}
-        {% for cand in range(thi, tlo - 1, -1) -%}
-        {% if tfit.s == 0 and title | length * 6 * cand <= 232 -%}
-        {% set tfit.s = cand -%}
-        {% endif -%}
-        {% endfor -%}
-        {% set ts = tfit.s if tfit.s > 0 else tlo -%}
-        {% set title = title | truncate(232 // (6 * ts), True, '', 0) -%}
-        {"bg":{{ bg | tojson }},"ttl":{{ screen_ttl | int(900) }},"draw":[
-        {%- if bm != '' -%}
-        {"t":"bitmap","x":120,"y":{{ iy }},"w":{{ bs }},"h":{{ bs }},{%- if bsc != 1 %}"s":{{ bsc }},{% endif -%}"c":{{ color | tojson }},"a":"c","d":{{ bm | tojson }}},
-        {%- elif icon != 'none' and icon != '' -%}
-        {"t":"icon","x":120,"y":{{ iy }},"s":{{ isz }},"c":{{ color | tojson }},"a":"c","v":{{ icon | tojson }}},
-        {%- endif -%}
-        {"t":"text","x":120,"y":{{ ty }},"s":{{ ts }},"c":{{ color | tojson }},"a":"c","v":{{ title | tojson }}},
-        {%- for line in vlines -%}
-        {"t":"text","x":120,"y":{{ vy0 + loop.index0 * (8 * vs + 2) }},"s":{{ vs }},"c":{{ color | tojson }},"a":"c","v":{{ line | tojson }}}{{ ',' if not loop.last else '' }}
-        {%- endfor -%}
-        ]}
-  - condition: template
-    value_template: >-
-      {{ (screen_3_entity != ''
-          and states(screen_3_entity) not in ('unknown', 'unavailable', 'none'))
-         or screen_3_value_tpl != '' }}
-  - action: mqtt.publish
-    data:
-      topic: "smalltv/{{ hostname }}/screen/{{ screen_3_slot }}"
-      retain: true
-      payload: >-
-        {% set e = screen_3_entity -%}
-        {% set title = screen_3_title_tpl if screen_3_title_tpl != '' else (screen_3_title if screen_3_title != '' else (state_attr(e, 'friendly_name') if e != '' else '')) -%}
-        {% set icon = screen_3_icon_tpl if screen_3_icon_tpl != '' else screen_3_icon -%}
-        {% set bm_tpl = screen_3_bitmap_tpl | trim -%}
-        {% set bm = bm_tpl if bm_tpl != '' else (screen_3_bitmap | trim) -%}
-        {% set bs = screen_3_bitmap_size | int(24) -%}
-        {% set bsc = screen_3_bitmap_scale | int(1) -%}
-        {% set color = screen_3_color_tpl if screen_3_color_tpl != '' else screen_3_color -%}
-        {% set bg = screen_3_bg_tpl if screen_3_bg_tpl != '' else screen_3_bg -%}
-        {% set vmin = screen_3_value_min_size | int(1) -%}
-        {% set vmax = screen_3_value_max_size | int(4) -%}
-        {% set iy = screen_3_icon_y | int(30) -%}
-        {% set isz = screen_3_icon_size | int(2) -%}
-        {% set ty = screen_3_title_y | int(110) -%}
-        {% set tmin = screen_3_title_min_size | int(1) -%}
-        {% set tmax = screen_3_title_max_size | int(2) -%}
-        {% set vy = screen_3_value_y | int(150) -%}
-        {% if screen_3_value_tpl != '' -%}
-        {% set v = screen_3_value_tpl -%}
-        {% else -%}
-        {% set u = state_attr(e, 'unit_of_measurement') or '' -%}
-        {% set v = states(e) ~ (' ' ~ u if u != '' else '') -%}
-        {% endif -%}
-        {# Value block: 232 px budget (width is length * 6 * scale). Pick the
-           largest scale in [lo..hi] that fits one line. Longer text wraps at
-           lo, lines start at value_y with pitch 8*lo + 2, at most 4 lines and
-           never past the last pixel row. -#}
-        {% set lo = [vmin, vmax] | min -%}
-        {% set hi = [vmin, vmax] | max -%}
-        {% set vy0 = [vy, 232] | min -%}
-        {% set v = v | truncate(150, True, '', 0) -%}
-        {% set fit = namespace(s=0) -%}
-        {% for cand in range(hi, lo - 1, -1) -%}
-        {% if fit.s == 0 and v | length * 6 * cand <= 232 -%}
-        {% set fit.s = cand -%}
-        {% endif -%}
-        {% endfor -%}
-        {% if fit.s > 0 -%}
-        {% set vs = fit.s -%}
-        {% set vlines = [v] -%}
-        {% else -%}
-        {% set vs = lo -%}
-        {% set w = 232 // (6 * lo) -%}
-        {% set maxl = [4, (236 - vy) // (8 * lo + 2)] | min -%}
-        {% if maxl < 1 -%}
-        {% set vlines = [v | truncate(w, True, '', 0)] -%}
-        {% else -%}
-        {% set vlines = (v | wordwrap(w, true, '\n')).split('\n') -%}
-        {% set vlines = vlines[:maxl] -%}
-        {% set vlines = vlines[:-1] + [vlines | last | truncate(w, True, '', 0)] -%}
-        {% endif -%}
-        {% endif -%}
-        {# Title stays one line: largest scale in [tlo..thi] that fits,
-           else tlo, then cut. -#}
-        {% set tlo = [tmin, tmax] | min -%}
-        {% set thi = [tmin, tmax] | max -%}
-        {% set tfit = namespace(s=0) -%}
-        {% for cand in range(thi, tlo - 1, -1) -%}
-        {% if tfit.s == 0 and title | length * 6 * cand <= 232 -%}
-        {% set tfit.s = cand -%}
-        {% endif -%}
-        {% endfor -%}
-        {% set ts = tfit.s if tfit.s > 0 else tlo -%}
-        {% set title = title | truncate(232 // (6 * ts), True, '', 0) -%}
-        {"bg":{{ bg | tojson }},"ttl":{{ screen_ttl | int(900) }},"draw":[
-        {%- if bm != '' -%}
-        {"t":"bitmap","x":120,"y":{{ iy }},"w":{{ bs }},"h":{{ bs }},{%- if bsc != 1 %}"s":{{ bsc }},{% endif -%}"c":{{ color | tojson }},"a":"c","d":{{ bm | tojson }}},
-        {%- elif icon != 'none' and icon != '' -%}
-        {"t":"icon","x":120,"y":{{ iy }},"s":{{ isz }},"c":{{ color | tojson }},"a":"c","v":{{ icon | tojson }}},
-        {%- endif -%}
-        {"t":"text","x":120,"y":{{ ty }},"s":{{ ts }},"c":{{ color | tojson }},"a":"c","v":{{ title | tojson }}},
-        {%- for line in vlines -%}
-        {"t":"text","x":120,"y":{{ vy0 + loop.index0 * (8 * vs + 2) }},"s":{{ vs }},"c":{{ color | tojson }},"a":"c","v":{{ line | tojson }}}{{ ',' if not loop.last else '' }}
-        {%- endfor -%}
-        ]}
-  - condition: template
-    value_template: >-
-      {{ (screen_4_entity != ''
-          and states(screen_4_entity) not in ('unknown', 'unavailable', 'none'))
-         or screen_4_value_tpl != '' }}
-  - action: mqtt.publish
-    data:
-      topic: "smalltv/{{ hostname }}/screen/{{ screen_4_slot }}"
-      retain: true
-      payload: >-
-        {% set e = screen_4_entity -%}
-        {% set title = screen_4_title_tpl if screen_4_title_tpl != '' else (screen_4_title if screen_4_title != '' else (state_attr(e, 'friendly_name') if e != '' else '')) -%}
-        {% set icon = screen_4_icon_tpl if screen_4_icon_tpl != '' else screen_4_icon -%}
-        {% set bm_tpl = screen_4_bitmap_tpl | trim -%}
-        {% set bm = bm_tpl if bm_tpl != '' else (screen_4_bitmap | trim) -%}
-        {% set bs = screen_4_bitmap_size | int(24) -%}
-        {% set bsc = screen_4_bitmap_scale | int(1) -%}
-        {% set color = screen_4_color_tpl if screen_4_color_tpl != '' else screen_4_color -%}
-        {% set bg = screen_4_bg_tpl if screen_4_bg_tpl != '' else screen_4_bg -%}
-        {% set vmin = screen_4_value_min_size | int(1) -%}
-        {% set vmax = screen_4_value_max_size | int(4) -%}
-        {% set iy = screen_4_icon_y | int(30) -%}
-        {% set isz = screen_4_icon_size | int(2) -%}
-        {% set ty = screen_4_title_y | int(110) -%}
-        {% set tmin = screen_4_title_min_size | int(1) -%}
-        {% set tmax = screen_4_title_max_size | int(2) -%}
-        {% set vy = screen_4_value_y | int(150) -%}
-        {% if screen_4_value_tpl != '' -%}
-        {% set v = screen_4_value_tpl -%}
-        {% else -%}
-        {% set u = state_attr(e, 'unit_of_measurement') or '' -%}
-        {% set v = states(e) ~ (' ' ~ u if u != '' else '') -%}
-        {% endif -%}
-        {# Value block: 232 px budget (width is length * 6 * scale). Pick the
-           largest scale in [lo..hi] that fits one line. Longer text wraps at
-           lo, lines start at value_y with pitch 8*lo + 2, at most 4 lines and
-           never past the last pixel row. -#}
-        {% set lo = [vmin, vmax] | min -%}
-        {% set hi = [vmin, vmax] | max -%}
-        {% set vy0 = [vy, 232] | min -%}
-        {% set v = v | truncate(150, True, '', 0) -%}
-        {% set fit = namespace(s=0) -%}
-        {% for cand in range(hi, lo - 1, -1) -%}
-        {% if fit.s == 0 and v | length * 6 * cand <= 232 -%}
-        {% set fit.s = cand -%}
-        {% endif -%}
-        {% endfor -%}
-        {% if fit.s > 0 -%}
-        {% set vs = fit.s -%}
-        {% set vlines = [v] -%}
-        {% else -%}
-        {% set vs = lo -%}
-        {% set w = 232 // (6 * lo) -%}
-        {% set maxl = [4, (236 - vy) // (8 * lo + 2)] | min -%}
-        {% if maxl < 1 -%}
-        {% set vlines = [v | truncate(w, True, '', 0)] -%}
-        {% else -%}
-        {% set vlines = (v | wordwrap(w, true, '\n')).split('\n') -%}
-        {% set vlines = vlines[:maxl] -%}
-        {% set vlines = vlines[:-1] + [vlines | last | truncate(w, True, '', 0)] -%}
-        {% endif -%}
-        {% endif -%}
-        {# Title stays one line: largest scale in [tlo..thi] that fits,
-           else tlo, then cut. -#}
-        {% set tlo = [tmin, tmax] | min -%}
-        {% set thi = [tmin, tmax] | max -%}
-        {% set tfit = namespace(s=0) -%}
-        {% for cand in range(thi, tlo - 1, -1) -%}
-        {% if tfit.s == 0 and title | length * 6 * cand <= 232 -%}
-        {% set tfit.s = cand -%}
-        {% endif -%}
-        {% endfor -%}
-        {% set ts = tfit.s if tfit.s > 0 else tlo -%}
-        {% set title = title | truncate(232 // (6 * ts), True, '', 0) -%}
-        {"bg":{{ bg | tojson }},"ttl":{{ screen_ttl | int(900) }},"draw":[
-        {%- if bm != '' -%}
-        {"t":"bitmap","x":120,"y":{{ iy }},"w":{{ bs }},"h":{{ bs }},{%- if bsc != 1 %}"s":{{ bsc }},{% endif -%}"c":{{ color | tojson }},"a":"c","d":{{ bm | tojson }}},
-        {%- elif icon != 'none' and icon != '' -%}
-        {"t":"icon","x":120,"y":{{ iy }},"s":{{ isz }},"c":{{ color | tojson }},"a":"c","v":{{ icon | tojson }}},
-        {%- endif -%}
-        {"t":"text","x":120,"y":{{ ty }},"s":{{ ts }},"c":{{ color | tojson }},"a":"c","v":{{ title | tojson }}},
-        {%- for line in vlines -%}
-        {"t":"text","x":120,"y":{{ vy0 + loop.index0 * (8 * vs + 2) }},"s":{{ vs }},"c":{{ color | tojson }},"a":"c","v":{{ line | tojson }}}{{ ',' if not loop.last else '' }}
-        {%- endfor -%}
-        ]}
+  # template is set (template-driven screens need no entity at all). Each
+  # screen is its own if block: a failed top-level condition would end the
+  # run, so one unavailable sensor would stop the screens after it.
+  - if:
+      - condition: template
+        value_template: >-
+          {{ (screen_1_entity != ''
+              and states(screen_1_entity) not in ('unknown', 'unavailable', 'none'))
+             or screen_1_value_tpl != '' }}
+    then:
+      - action: mqtt.publish
+        data:
+          topic: "smalltv/{{ hostname }}/screen/{{ screen_1_slot }}"
+          retain: true
+          payload: >-
+            {% set e = screen_1_entity -%}
+            {% set title = screen_1_title_tpl if screen_1_title_tpl != '' else (screen_1_title if screen_1_title != '' else (state_attr(e, 'friendly_name') if e != '' else '')) -%}
+            {% set icon = screen_1_icon_tpl if screen_1_icon_tpl != '' else screen_1_icon -%}
+            {% set bm_tpl = screen_1_bitmap_tpl | trim -%}
+            {% set bm = bm_tpl if bm_tpl != '' else (screen_1_bitmap | trim) -%}
+            {% set bs = screen_1_bitmap_size | int(24) -%}
+            {% set bsc = screen_1_bitmap_scale | int(1) -%}
+            {% set color = screen_1_color_tpl if screen_1_color_tpl != '' else screen_1_color -%}
+            {% set bg = screen_1_bg_tpl if screen_1_bg_tpl != '' else screen_1_bg -%}
+            {% set vmin = screen_1_value_min_size | int(1) -%}
+            {% set vmax = screen_1_value_max_size | int(4) -%}
+            {% set iy = screen_1_icon_y | int(30) -%}
+            {% set isz = screen_1_icon_size | int(2) -%}
+            {% set ty = screen_1_title_y | int(110) -%}
+            {% set tmin = screen_1_title_min_size | int(1) -%}
+            {% set tmax = screen_1_title_max_size | int(2) -%}
+            {% set vy = screen_1_value_y | int(150) -%}
+            {% if screen_1_value_tpl != '' -%}
+            {% set v = screen_1_value_tpl -%}
+            {% else -%}
+            {% set u = state_attr(e, 'unit_of_measurement') or '' -%}
+            {% set v = states(e) ~ (' ' ~ u if u != '' else '') -%}
+            {% endif -%}
+            {# Value block: 232 px budget (width is length * 6 * scale). Pick the
+               largest scale in [lo..hi] that fits one line. Longer text wraps at
+               lo, lines start at value_y with pitch 8*lo + 2, at most 4 lines and
+               never past the last pixel row. -#}
+            {% set lo = [vmin, vmax] | min -%}
+            {% set hi = [vmin, vmax] | max -%}
+            {% set vy0 = [vy, 232] | min -%}
+            {% set v = v | truncate(150, True, '', 0) -%}
+            {% set fit = namespace(s=0) -%}
+            {% for cand in range(hi, lo - 1, -1) -%}
+            {% if fit.s == 0 and v | length * 6 * cand <= 232 -%}
+            {% set fit.s = cand -%}
+            {% endif -%}
+            {% endfor -%}
+            {% if fit.s > 0 -%}
+            {% set vs = fit.s -%}
+            {% set vlines = [v] -%}
+            {% else -%}
+            {% set vs = lo -%}
+            {% set w = 232 // (6 * lo) -%}
+            {% set maxl = [4, (236 - vy) // (8 * lo + 2)] | min -%}
+            {% if maxl < 1 -%}
+            {% set vlines = [v | truncate(w, True, '', 0)] -%}
+            {% else -%}
+            {% set vlines = (v | wordwrap(w, true, '\n')).split('\n') -%}
+            {% set vlines = vlines[:maxl] -%}
+            {% set vlines = vlines[:-1] + [vlines | last | truncate(w, True, '', 0)] -%}
+            {% endif -%}
+            {% endif -%}
+            {# Title stays one line: largest scale in [tlo..thi] that fits,
+               else tlo, then cut. -#}
+            {% set tlo = [tmin, tmax] | min -%}
+            {% set thi = [tmin, tmax] | max -%}
+            {% set tfit = namespace(s=0) -%}
+            {% for cand in range(thi, tlo - 1, -1) -%}
+            {% if tfit.s == 0 and title | length * 6 * cand <= 232 -%}
+            {% set tfit.s = cand -%}
+            {% endif -%}
+            {% endfor -%}
+            {% set ts = tfit.s if tfit.s > 0 else tlo -%}
+            {% set title = title | truncate(232 // (6 * ts), True, '', 0) -%}
+            {"bg":{{ bg | tojson }},"ttl":{{ screen_ttl | int(900) }},"draw":[
+            {%- if bm != '' -%}
+            {"t":"bitmap","x":120,"y":{{ iy }},"w":{{ bs }},"h":{{ bs }},{%- if bsc != 1 %}"s":{{ bsc }},{% endif -%}"c":{{ color | tojson }},"a":"c","d":{{ bm | tojson }}},
+            {%- elif icon != 'none' and icon != '' -%}
+            {"t":"icon","x":120,"y":{{ iy }},"s":{{ isz }},"c":{{ color | tojson }},"a":"c","v":{{ icon | tojson }}},
+            {%- endif -%}
+            {"t":"text","x":120,"y":{{ ty }},"s":{{ ts }},"c":{{ color | tojson }},"a":"c","v":{{ title | tojson }}},
+            {%- for line in vlines -%}
+            {"t":"text","x":120,"y":{{ vy0 + loop.index0 * (8 * vs + 2) }},"s":{{ vs }},"c":{{ color | tojson }},"a":"c","v":{{ line | tojson }}}{{ ',' if not loop.last else '' }}
+            {%- endfor -%}
+            ]}
+  - if:
+      - condition: template
+        value_template: >-
+          {{ (screen_2_entity != ''
+              and states(screen_2_entity) not in ('unknown', 'unavailable', 'none'))
+             or screen_2_value_tpl != '' }}
+    then:
+      - action: mqtt.publish
+        data:
+          topic: "smalltv/{{ hostname }}/screen/{{ screen_2_slot }}"
+          retain: true
+          payload: >-
+            {% set e = screen_2_entity -%}
+            {% set title = screen_2_title_tpl if screen_2_title_tpl != '' else (screen_2_title if screen_2_title != '' else (state_attr(e, 'friendly_name') if e != '' else '')) -%}
+            {% set icon = screen_2_icon_tpl if screen_2_icon_tpl != '' else screen_2_icon -%}
+            {% set bm_tpl = screen_2_bitmap_tpl | trim -%}
+            {% set bm = bm_tpl if bm_tpl != '' else (screen_2_bitmap | trim) -%}
+            {% set bs = screen_2_bitmap_size | int(24) -%}
+            {% set bsc = screen_2_bitmap_scale | int(1) -%}
+            {% set color = screen_2_color_tpl if screen_2_color_tpl != '' else screen_2_color -%}
+            {% set bg = screen_2_bg_tpl if screen_2_bg_tpl != '' else screen_2_bg -%}
+            {% set vmin = screen_2_value_min_size | int(1) -%}
+            {% set vmax = screen_2_value_max_size | int(4) -%}
+            {% set iy = screen_2_icon_y | int(30) -%}
+            {% set isz = screen_2_icon_size | int(2) -%}
+            {% set ty = screen_2_title_y | int(110) -%}
+            {% set tmin = screen_2_title_min_size | int(1) -%}
+            {% set tmax = screen_2_title_max_size | int(2) -%}
+            {% set vy = screen_2_value_y | int(150) -%}
+            {% if screen_2_value_tpl != '' -%}
+            {% set v = screen_2_value_tpl -%}
+            {% else -%}
+            {% set u = state_attr(e, 'unit_of_measurement') or '' -%}
+            {% set v = states(e) ~ (' ' ~ u if u != '' else '') -%}
+            {% endif -%}
+            {# Value block: 232 px budget (width is length * 6 * scale). Pick the
+               largest scale in [lo..hi] that fits one line. Longer text wraps at
+               lo, lines start at value_y with pitch 8*lo + 2, at most 4 lines and
+               never past the last pixel row. -#}
+            {% set lo = [vmin, vmax] | min -%}
+            {% set hi = [vmin, vmax] | max -%}
+            {% set vy0 = [vy, 232] | min -%}
+            {% set v = v | truncate(150, True, '', 0) -%}
+            {% set fit = namespace(s=0) -%}
+            {% for cand in range(hi, lo - 1, -1) -%}
+            {% if fit.s == 0 and v | length * 6 * cand <= 232 -%}
+            {% set fit.s = cand -%}
+            {% endif -%}
+            {% endfor -%}
+            {% if fit.s > 0 -%}
+            {% set vs = fit.s -%}
+            {% set vlines = [v] -%}
+            {% else -%}
+            {% set vs = lo -%}
+            {% set w = 232 // (6 * lo) -%}
+            {% set maxl = [4, (236 - vy) // (8 * lo + 2)] | min -%}
+            {% if maxl < 1 -%}
+            {% set vlines = [v | truncate(w, True, '', 0)] -%}
+            {% else -%}
+            {% set vlines = (v | wordwrap(w, true, '\n')).split('\n') -%}
+            {% set vlines = vlines[:maxl] -%}
+            {% set vlines = vlines[:-1] + [vlines | last | truncate(w, True, '', 0)] -%}
+            {% endif -%}
+            {% endif -%}
+            {# Title stays one line: largest scale in [tlo..thi] that fits,
+               else tlo, then cut. -#}
+            {% set tlo = [tmin, tmax] | min -%}
+            {% set thi = [tmin, tmax] | max -%}
+            {% set tfit = namespace(s=0) -%}
+            {% for cand in range(thi, tlo - 1, -1) -%}
+            {% if tfit.s == 0 and title | length * 6 * cand <= 232 -%}
+            {% set tfit.s = cand -%}
+            {% endif -%}
+            {% endfor -%}
+            {% set ts = tfit.s if tfit.s > 0 else tlo -%}
+            {% set title = title | truncate(232 // (6 * ts), True, '', 0) -%}
+            {"bg":{{ bg | tojson }},"ttl":{{ screen_ttl | int(900) }},"draw":[
+            {%- if bm != '' -%}
+            {"t":"bitmap","x":120,"y":{{ iy }},"w":{{ bs }},"h":{{ bs }},{%- if bsc != 1 %}"s":{{ bsc }},{% endif -%}"c":{{ color | tojson }},"a":"c","d":{{ bm | tojson }}},
+            {%- elif icon != 'none' and icon != '' -%}
+            {"t":"icon","x":120,"y":{{ iy }},"s":{{ isz }},"c":{{ color | tojson }},"a":"c","v":{{ icon | tojson }}},
+            {%- endif -%}
+            {"t":"text","x":120,"y":{{ ty }},"s":{{ ts }},"c":{{ color | tojson }},"a":"c","v":{{ title | tojson }}},
+            {%- for line in vlines -%}
+            {"t":"text","x":120,"y":{{ vy0 + loop.index0 * (8 * vs + 2) }},"s":{{ vs }},"c":{{ color | tojson }},"a":"c","v":{{ line | tojson }}}{{ ',' if not loop.last else '' }}
+            {%- endfor -%}
+            ]}
+  - if:
+      - condition: template
+        value_template: >-
+          {{ (screen_3_entity != ''
+              and states(screen_3_entity) not in ('unknown', 'unavailable', 'none'))
+             or screen_3_value_tpl != '' }}
+    then:
+      - action: mqtt.publish
+        data:
+          topic: "smalltv/{{ hostname }}/screen/{{ screen_3_slot }}"
+          retain: true
+          payload: >-
+            {% set e = screen_3_entity -%}
+            {% set title = screen_3_title_tpl if screen_3_title_tpl != '' else (screen_3_title if screen_3_title != '' else (state_attr(e, 'friendly_name') if e != '' else '')) -%}
+            {% set icon = screen_3_icon_tpl if screen_3_icon_tpl != '' else screen_3_icon -%}
+            {% set bm_tpl = screen_3_bitmap_tpl | trim -%}
+            {% set bm = bm_tpl if bm_tpl != '' else (screen_3_bitmap | trim) -%}
+            {% set bs = screen_3_bitmap_size | int(24) -%}
+            {% set bsc = screen_3_bitmap_scale | int(1) -%}
+            {% set color = screen_3_color_tpl if screen_3_color_tpl != '' else screen_3_color -%}
+            {% set bg = screen_3_bg_tpl if screen_3_bg_tpl != '' else screen_3_bg -%}
+            {% set vmin = screen_3_value_min_size | int(1) -%}
+            {% set vmax = screen_3_value_max_size | int(4) -%}
+            {% set iy = screen_3_icon_y | int(30) -%}
+            {% set isz = screen_3_icon_size | int(2) -%}
+            {% set ty = screen_3_title_y | int(110) -%}
+            {% set tmin = screen_3_title_min_size | int(1) -%}
+            {% set tmax = screen_3_title_max_size | int(2) -%}
+            {% set vy = screen_3_value_y | int(150) -%}
+            {% if screen_3_value_tpl != '' -%}
+            {% set v = screen_3_value_tpl -%}
+            {% else -%}
+            {% set u = state_attr(e, 'unit_of_measurement') or '' -%}
+            {% set v = states(e) ~ (' ' ~ u if u != '' else '') -%}
+            {% endif -%}
+            {# Value block: 232 px budget (width is length * 6 * scale). Pick the
+               largest scale in [lo..hi] that fits one line. Longer text wraps at
+               lo, lines start at value_y with pitch 8*lo + 2, at most 4 lines and
+               never past the last pixel row. -#}
+            {% set lo = [vmin, vmax] | min -%}
+            {% set hi = [vmin, vmax] | max -%}
+            {% set vy0 = [vy, 232] | min -%}
+            {% set v = v | truncate(150, True, '', 0) -%}
+            {% set fit = namespace(s=0) -%}
+            {% for cand in range(hi, lo - 1, -1) -%}
+            {% if fit.s == 0 and v | length * 6 * cand <= 232 -%}
+            {% set fit.s = cand -%}
+            {% endif -%}
+            {% endfor -%}
+            {% if fit.s > 0 -%}
+            {% set vs = fit.s -%}
+            {% set vlines = [v] -%}
+            {% else -%}
+            {% set vs = lo -%}
+            {% set w = 232 // (6 * lo) -%}
+            {% set maxl = [4, (236 - vy) // (8 * lo + 2)] | min -%}
+            {% if maxl < 1 -%}
+            {% set vlines = [v | truncate(w, True, '', 0)] -%}
+            {% else -%}
+            {% set vlines = (v | wordwrap(w, true, '\n')).split('\n') -%}
+            {% set vlines = vlines[:maxl] -%}
+            {% set vlines = vlines[:-1] + [vlines | last | truncate(w, True, '', 0)] -%}
+            {% endif -%}
+            {% endif -%}
+            {# Title stays one line: largest scale in [tlo..thi] that fits,
+               else tlo, then cut. -#}
+            {% set tlo = [tmin, tmax] | min -%}
+            {% set thi = [tmin, tmax] | max -%}
+            {% set tfit = namespace(s=0) -%}
+            {% for cand in range(thi, tlo - 1, -1) -%}
+            {% if tfit.s == 0 and title | length * 6 * cand <= 232 -%}
+            {% set tfit.s = cand -%}
+            {% endif -%}
+            {% endfor -%}
+            {% set ts = tfit.s if tfit.s > 0 else tlo -%}
+            {% set title = title | truncate(232 // (6 * ts), True, '', 0) -%}
+            {"bg":{{ bg | tojson }},"ttl":{{ screen_ttl | int(900) }},"draw":[
+            {%- if bm != '' -%}
+            {"t":"bitmap","x":120,"y":{{ iy }},"w":{{ bs }},"h":{{ bs }},{%- if bsc != 1 %}"s":{{ bsc }},{% endif -%}"c":{{ color | tojson }},"a":"c","d":{{ bm | tojson }}},
+            {%- elif icon != 'none' and icon != '' -%}
+            {"t":"icon","x":120,"y":{{ iy }},"s":{{ isz }},"c":{{ color | tojson }},"a":"c","v":{{ icon | tojson }}},
+            {%- endif -%}
+            {"t":"text","x":120,"y":{{ ty }},"s":{{ ts }},"c":{{ color | tojson }},"a":"c","v":{{ title | tojson }}},
+            {%- for line in vlines -%}
+            {"t":"text","x":120,"y":{{ vy0 + loop.index0 * (8 * vs + 2) }},"s":{{ vs }},"c":{{ color | tojson }},"a":"c","v":{{ line | tojson }}}{{ ',' if not loop.last else '' }}
+            {%- endfor -%}
+            ]}
+  - if:
+      - condition: template
+        value_template: >-
+          {{ (screen_4_entity != ''
+              and states(screen_4_entity) not in ('unknown', 'unavailable', 'none'))
+             or screen_4_value_tpl != '' }}
+    then:
+      - action: mqtt.publish
+        data:
+          topic: "smalltv/{{ hostname }}/screen/{{ screen_4_slot }}"
+          retain: true
+          payload: >-
+            {% set e = screen_4_entity -%}
+            {% set title = screen_4_title_tpl if screen_4_title_tpl != '' else (screen_4_title if screen_4_title != '' else (state_attr(e, 'friendly_name') if e != '' else '')) -%}
+            {% set icon = screen_4_icon_tpl if screen_4_icon_tpl != '' else screen_4_icon -%}
+            {% set bm_tpl = screen_4_bitmap_tpl | trim -%}
+            {% set bm = bm_tpl if bm_tpl != '' else (screen_4_bitmap | trim) -%}
+            {% set bs = screen_4_bitmap_size | int(24) -%}
+            {% set bsc = screen_4_bitmap_scale | int(1) -%}
+            {% set color = screen_4_color_tpl if screen_4_color_tpl != '' else screen_4_color -%}
+            {% set bg = screen_4_bg_tpl if screen_4_bg_tpl != '' else screen_4_bg -%}
+            {% set vmin = screen_4_value_min_size | int(1) -%}
+            {% set vmax = screen_4_value_max_size | int(4) -%}
+            {% set iy = screen_4_icon_y | int(30) -%}
+            {% set isz = screen_4_icon_size | int(2) -%}
+            {% set ty = screen_4_title_y | int(110) -%}
+            {% set tmin = screen_4_title_min_size | int(1) -%}
+            {% set tmax = screen_4_title_max_size | int(2) -%}
+            {% set vy = screen_4_value_y | int(150) -%}
+            {% if screen_4_value_tpl != '' -%}
+            {% set v = screen_4_value_tpl -%}
+            {% else -%}
+            {% set u = state_attr(e, 'unit_of_measurement') or '' -%}
+            {% set v = states(e) ~ (' ' ~ u if u != '' else '') -%}
+            {% endif -%}
+            {# Value block: 232 px budget (width is length * 6 * scale). Pick the
+               largest scale in [lo..hi] that fits one line. Longer text wraps at
+               lo, lines start at value_y with pitch 8*lo + 2, at most 4 lines and
+               never past the last pixel row. -#}
+            {% set lo = [vmin, vmax] | min -%}
+            {% set hi = [vmin, vmax] | max -%}
+            {% set vy0 = [vy, 232] | min -%}
+            {% set v = v | truncate(150, True, '', 0) -%}
+            {% set fit = namespace(s=0) -%}
+            {% for cand in range(hi, lo - 1, -1) -%}
+            {% if fit.s == 0 and v | length * 6 * cand <= 232 -%}
+            {% set fit.s = cand -%}
+            {% endif -%}
+            {% endfor -%}
+            {% if fit.s > 0 -%}
+            {% set vs = fit.s -%}
+            {% set vlines = [v] -%}
+            {% else -%}
+            {% set vs = lo -%}
+            {% set w = 232 // (6 * lo) -%}
+            {% set maxl = [4, (236 - vy) // (8 * lo + 2)] | min -%}
+            {% if maxl < 1 -%}
+            {% set vlines = [v | truncate(w, True, '', 0)] -%}
+            {% else -%}
+            {% set vlines = (v | wordwrap(w, true, '\n')).split('\n') -%}
+            {% set vlines = vlines[:maxl] -%}
+            {% set vlines = vlines[:-1] + [vlines | last | truncate(w, True, '', 0)] -%}
+            {% endif -%}
+            {% endif -%}
+            {# Title stays one line: largest scale in [tlo..thi] that fits,
+               else tlo, then cut. -#}
+            {% set tlo = [tmin, tmax] | min -%}
+            {% set thi = [tmin, tmax] | max -%}
+            {% set tfit = namespace(s=0) -%}
+            {% for cand in range(thi, tlo - 1, -1) -%}
+            {% if tfit.s == 0 and title | length * 6 * cand <= 232 -%}
+            {% set tfit.s = cand -%}
+            {% endif -%}
+            {% endfor -%}
+            {% set ts = tfit.s if tfit.s > 0 else tlo -%}
+            {% set title = title | truncate(232 // (6 * ts), True, '', 0) -%}
+            {"bg":{{ bg | tojson }},"ttl":{{ screen_ttl | int(900) }},"draw":[
+            {%- if bm != '' -%}
+            {"t":"bitmap","x":120,"y":{{ iy }},"w":{{ bs }},"h":{{ bs }},{%- if bsc != 1 %}"s":{{ bsc }},{% endif -%}"c":{{ color | tojson }},"a":"c","d":{{ bm | tojson }}},
+            {%- elif icon != 'none' and icon != '' -%}
+            {"t":"icon","x":120,"y":{{ iy }},"s":{{ isz }},"c":{{ color | tojson }},"a":"c","v":{{ icon | tojson }}},
+            {%- endif -%}
+            {"t":"text","x":120,"y":{{ ty }},"s":{{ ts }},"c":{{ color | tojson }},"a":"c","v":{{ title | tojson }}},
+            {%- for line in vlines -%}
+            {"t":"text","x":120,"y":{{ vy0 + loop.index0 * (8 * vs + 2) }},"s":{{ vs }},"c":{{ color | tojson }},"a":"c","v":{{ line | tojson }}}{{ ',' if not loop.last else '' }}
+            {%- endfor -%}
+            ]}

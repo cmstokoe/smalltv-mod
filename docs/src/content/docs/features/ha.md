@@ -509,7 +509,7 @@ Publish an empty retained payload to the slot's topic. The broker drops its reta
 
 ### Screens that clean themselves up
 
-Screens published by the screen board blueprint carry a time-to-live, set by the `screen_ttl` input (900 seconds by default). The blueprint republishes every minute, so the countdown never runs out while the automation exists. Delete the automation and its screens expire on their own within the TTL. The broker still holds the retained copy, though, so a device reboot can briefly bring a dead screen back. The remaining time is persisted across reboots, so the device expires it again on the same clock instead of restarting the countdown. Set the input to 0 for the old sticky behaviour, where a screen stays until you delete it by hand.
+Screens published by the screen board blueprint carry a time-to-live, set by the `screen_ttl` input (900 seconds by default). The blueprint republishes every minute, so the countdown never runs out while the automation exists and the screen's sensor reports. A screen whose entity is `unavailable` is not republished and drops out when its TTL runs out; the other screens of the board keep publishing. Delete the automation and its screens expire on their own within the TTL. The broker still holds the retained copy, though, so a device reboot can briefly bring a dead screen back. The remaining time is persisted across reboots, so the device expires it again on the same clock instead of restarting the countdown. Set the input to 0 for the old sticky behaviour, where a screen stays until you delete it by hand.
 
 ### Clearing everything at once
 
