@@ -102,8 +102,9 @@ blueprint:
       name: Screen time-to-live
       description: >-
         Seconds the screen stays in the rotation after its last publish. The
-        one-minute refresh keeps it alive while this automation exists, so
-        while you change nothing the TTL never runs out. Delete the
+        one-minute refresh keeps it alive while both sensors report. While
+        one is unavailable nothing is published, and the screen drops out
+        when this time runs out; set 0 to keep the last readings. Delete the
         automation and the screen vanishes from the device within this time.
         A stale copy can briefly reappear after a device reboot because the
         broker still holds the retained message; the device then expires it
@@ -178,7 +179,10 @@ blueprint:
             Optional Jinja template for the big value line. When it renders
             non-empty it wins over the entity's state, and with it set the
             entity can be left empty. Keep it short: 4 characters fit at
-            text scale 4, 5 at scale 3.
+            text scale 4, 5 at scale 3. It is rendered even while a sensor
+            is unavailable: a filter with no default, such as round(1), then
+            stops the run and the screen is not republished. Leave it empty
+            to show the entity's state rounded by Decimals.
           default: ""
           selector:
             template:
@@ -327,7 +331,10 @@ blueprint:
             Optional Jinja template for the big value line. When it renders
             non-empty it wins over the entity's state, and with it set the
             entity can be left empty. Keep it short: 4 characters fit at
-            text scale 4, 5 at scale 3.
+            text scale 4, 5 at scale 3. It is rendered even while a sensor
+            is unavailable: a filter with no default, such as round(1), then
+            stops the run and the screen is not republished. Leave it empty
+            to show the entity's state rounded by Decimals.
           default: ""
           selector:
             template:
@@ -639,8 +646,8 @@ conditions:
     value_template: "{{ hostname != '' }}"
   # Both columns must have something to say: an entity that is reporting, or
   # a value template. While a sensor is unavailable the screen is not
-  # republished, so the retained copy on the panel keeps its last good
-  # reading instead of showing "unavailable" in big type.
+  # republished, so the panel never shows "unavailable" in big type. It keeps
+  # the last good reading until screen_ttl runs out, then drops the screen.
   - condition: template
     value_template: >-
       {{ (left_value_tpl != ''

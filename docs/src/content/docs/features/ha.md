@@ -352,8 +352,19 @@ Both column entities trigger the automation on their own, so `watched_entities`
 is only for entities that appear inside a template and nowhere else. As with the
 screen board, the screen republishes every minute to keep its TTL alive and
 after every Home Assistant restart. While either sensor reads `unavailable` the
-screen is not republished at all, so the panel keeps the last good pair of
-readings instead of showing `unavailable` in big type.
+screen is not republished at all, so the panel never shows `unavailable` in big
+type. It keeps the last good pair of readings until the screen's TTL runs out
+(900 seconds by default), then drops the screen. With no other screen in the
+rotation the panel shows "Waiting for Home Assistant" until the sensor reports
+again. Set `screen_ttl` to 0 to keep the last readings for as long as the sensor
+is gone.
+
+A value template is rendered on every run, even while its sensor is
+unavailable. A filter that fails on `unavailable`, such as `round(1)` with no
+default, stops the run with a template error, so the screen is not republished
+and expires the same way. Leave the value template empty when the column only
+shows the entity's state: the **Decimals** input already rounds it. Otherwise
+give the filter a default, for example `states('sensor.x') | round(1, default='--')`.
 
 ### Turning elements off
 
